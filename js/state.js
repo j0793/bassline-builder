@@ -3,13 +3,16 @@
 
 export const PPQ = 12;
 
-export const QUANTIZE = [
+// The grid is a note value plus an optional triplet switch.
+export const GRID_VALUES = [
   { ticks: 12, label: '1/4' },
   { ticks: 6, label: '1/8' },
   { ticks: 3, label: '1/16' },
-  { ticks: 4, label: '1/8 triplet' },
-  { ticks: 2, label: '1/16 triplet' },
 ];
+export const TRIPLET_OF = { 12: 8, 6: 4, 3: 2 };
+export const STRAIGHT_OF = { 8: 12, 4: 6, 2: 3 };
+export const isTriplet = q => q in STRAIGHT_OF;
+export const gridLabel = q => `${GRID_VALUES.find(g => g.ticks === (STRAIGHT_OF[q] ?? q))?.label ?? ''}${isTriplet(q) ? ' triplet' : ''}`;
 
 // Open strings, lowest first.
 export const TUNINGS = {
@@ -57,6 +60,21 @@ export const demoGroove = () => ({
     n(48, 6, 38), n(57, 3, 38), n(60, 3, 50), n(66, 3, 48), n(69, 3, 45),
     n(72, 6, 38), n(81, 3, 42), n(84, 3, 45), n(87, 3, 48), n(90, 3, 40), n(93, 3, 32),
   ],
+});
+
+// A free, open canvas: no notes, one chord you can change, nothing assumed about style.
+export const emptyGroove = (tuning = TUNINGS[4]) => ({
+  version: 1,
+  title: 'Untitled groove',
+  genre: 'funk',
+  bpm: 90,
+  timeSig: [4, 4],
+  bars: 2,
+  key: { tonic: 'C', mode: 'major' },
+  quantize: 3,
+  tuning: [...tuning],
+  chords: [{ start: 0, symbol: 'C' }],
+  notes: [],
 });
 
 export const blankGroove = from => ({

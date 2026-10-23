@@ -5,15 +5,41 @@
 //   6 sixth · x ghost note on the root · A approach (a half step into the next chord's root)
 //   N the next chord's root, played early (anticipation)
 import { PPQ, uid, changeTimeSig, normalize, TUNINGS } from './state.js';
-import { chordInfo, noteMidi } from './theory.js';
+import { chordInfo, noteMidi, pretty } from './theory.js';
+import { customGenres, genreExamples } from './share.js';
 
+// Built-in genres. `progs` are typical progressions Generate draws from (chords, key, mode).
 export const GENRES = [
-  { id: 'funk', name: 'Funk', blurb: 'Land the one hard, fill the gaps with ghost notes, pop the octave.' },
-  { id: 'motown', name: 'Motown / Soul', blurb: 'Melodic chord tones that walk into each change with an approach note.' },
-  { id: 'rock', name: 'Rock', blurb: 'Steady roots locked to the kick drum. Consistency is the groove.' },
-  { id: 'reggae', name: 'Reggae', blurb: 'Leave beat one empty and let the bass sing low and round.' },
-  { id: 'jazz', name: 'Jazz walking', blurb: 'Quarter notes: chord tones on strong beats, an approach note on beat four.' },
-  { id: 'latin', name: 'Latin', blurb: 'Anticipate the next chord. The bass plays ahead of the bar line.' },
+  {
+    id: 'funk', name: 'Funk', bpm: [92, 108],
+    blurb: 'Land the one hard, fill the gaps with ghost notes, pop the octave.',
+    progs: [[['E9', 'E9'], 'E', 'minor'], [['Am7', 'D9'], 'A', 'minor'], [['Cm7', 'F7'], 'C', 'minor'], [['Dm7', 'G7'], 'D', 'minor']],
+  },
+  {
+    id: 'motown', name: 'Motown / Soul', bpm: [92, 108],
+    blurb: 'Melodic chord tones that walk into each change with an approach note.',
+    progs: [[['C', 'Am', 'F', 'G'], 'C', 'major'], [['F', 'Dm', 'Bb', 'C'], 'F', 'major'], [['G', 'Em', 'C', 'D'], 'G', 'major']],
+  },
+  {
+    id: 'rock', name: 'Rock', bpm: [120, 150],
+    blurb: 'Steady roots locked to the kick drum. Consistency is the groove.',
+    progs: [[['A5', 'G5', 'D5', 'A5'], 'A', 'major'], [['E5', 'E5', 'C5', 'D5'], 'E', 'minor'], [['D5', 'C5', 'G5', 'D5'], 'D', 'major']],
+  },
+  {
+    id: 'reggae', name: 'Reggae', bpm: [72, 84],
+    blurb: 'Leave beat one empty and let the bass sing low and round.',
+    progs: [[['G', 'C'], 'G', 'major'], [['Am', 'G', 'F', 'G'], 'A', 'minor'], [['Dm', 'Am'], 'D', 'minor']],
+  },
+  {
+    id: 'jazz', name: 'Jazz walking', bpm: [120, 150],
+    blurb: 'Quarter notes: chord tones on strong beats, an approach note on beat four.',
+    progs: [[['Cm7', 'F7', 'Bbmaj7', 'Bbmaj7'], 'Bb', 'major'], [['F7', 'Bb7', 'F7', 'C7'], 'F', 'major'], [['Dm7', 'G7', 'Cmaj7', 'A7'], 'C', 'major']],
+  },
+  {
+    id: 'latin', name: 'Latin', bpm: [96, 124],
+    blurb: 'Anticipate the next chord. The bass plays ahead of the bar line.',
+    progs: [[['Am', 'E7', 'Am', 'E7'], 'A', 'minor'], [['Cmaj7', 'Dm7', 'G7', 'Cmaj7'], 'C', 'major'], [['Dm', 'A7'], 'D', 'minor']],
+  },
 ];
 
 export const TEMPLATES = [
@@ -189,4 +215,40 @@ export function buildPreset(p, tuning = TUNINGS[4]) {
 
 export const presets = () => PRESETS;
 export const templatesFor = genre => TEMPLATES.filter(t => !genre || genre === 'all' || t.genre === genre);
-export const genreName = id => GENRES.find(g => g.id === id)?.name ?? 'Any';
+
+// Built-in genres plus the ones you created.
+export const allGenres = () => [...GENRES, ...customGenres().map(g => ({ ...g, custom: true }))];
+export const genreName = id => allGenres().find(g => g.id === id)?.name ?? 'Other';
+
+// Everything Generate can pick for a genre: template × progression ideas, plus basslines you saved there.
+export function generationPool(genreId, tuning = TUNINGS[4]) {
+  const g = GENRES.find(x => x.id === genreId);
+  const pool = [];
+  if (g) {
+    for (const t of TEMPLATES.filter(t => t.genre === genreId)) {
+      for (const [chords, tonic, mode] of g.progs) {
+        pool.push({
+          label: `${t.name} over ${chords.map(pretty).join(' – ')}`,
+          build: rand => {
+            const bpm = g.bpm[0] + Math.round(rand() * (g.bpm[1] - g.bpm[0]) / 2) * 2;
+            return buildPreset({ genre: genreId, title: `${g.name}: ${t.name}`, key: [tonic, mode], bpm, chords, template: t.id }, tuning);
+          },
+        });
+      }
+    }
+  }
+  for (const ex of genreExamples().filter(e => e.genre === genreId)) {
+    pool.push({ label: ex.groove.title, build: () => normalize(structuredClone({ ...ex.groove, genre: genreId })) });
+  }
+  return pool;
+}
+
+let lastPick = null;
+export function generate(genreId, { tuning, rand = Math.random } = {}) {
+  const pool = generationPool(genreId, tuning);
+  if (!pool.length) return null;
+  let i = Math.floor(rand() * pool.length);
+  if (pool.length > 1 && pool[i].label === lastPick) i = (i + 1) % pool.length;
+  lastPick = pool[i].label;
+  return pool[i].build(rand);
+}

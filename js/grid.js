@@ -3,7 +3,7 @@ import { barTicks, beatTicks, totalTicks, uid, claim } from './state.js';
 import { midiName, prettyNote, pretty } from './theory.js';
 
 export const ROW_H = 28;
-const COL_W = { 12: 56, 6: 40, 4: 32, 3: 30, 2: 22 };
+const COL_W = { 12: 56, 8: 44, 6: 40, 4: 32, 3: 30, 2: 22 };
 const FRETS_ABOVE_TOP = 12;
 
 export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview }) {

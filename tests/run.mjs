@@ -9,7 +9,9 @@ if (process.env.TONAL_BROWSER_BUILD) {
 }
 
 const { demoGroove, normalize, changeTimeSig, totalTicks, claim } = await import('../js/state.js');
-const { TEMPLATES, presets, buildPreset, applyTemplate } = await import('../js/genres.js');
+const { TEMPLATES, presets, buildPreset, applyTemplate, generate, generationPool } = await import('../js/genres.js');
+const { coach, romanFor } = await import('../js/coach.js');
+const { emptyGroove, gridLabel } = await import('../js/state.js');
 const { analyze, noteFunction, chordInfo, keyInfo, suggestNext, guessKey } = await import('../js/theory.js');
 const { assignFingering } = await import('../js/fingering.js');
 const { buildBars } = await import('../js/notation.js');
@@ -185,6 +187,58 @@ test('the tumbao anticipates the next chord on beat four', () => {
   const s = buildPreset(presets().find(p => p.template === 'latin-tumbao')); // Am E7 Am E7
   const n = s.notes.find(x => x.start === 36);
   assert.equal(n.midi % 12, 4); // E
+});
+
+test('the blank canvas suggests roots first, and applying it adds a root per chord', () => {
+  const s = normalize(emptyGroove());
+  const tips = coach(s, analyze(s));
+  assert.equal(tips[0].id, 'roots');
+  const d = structuredClone(s);
+  tips[0].apply(d);
+  normalize(d);
+  assert.deepEqual(d.notes.map(n => n.midi % 12), [0]);
+});
+
+test('every coach suggestion on every preset applies cleanly', () => {
+  for (const p of presets()) {
+    const s = buildPreset(p);
+    for (const t of coach(s, analyze(s))) {
+      if (!t.apply) continue;
+      const d = structuredClone(s);
+      t.apply(d);
+      normalize(d);
+      buildBars(d).bars.forEach(b => assert.equal(sumTicks(b), 48, `${p.title}: ${t.id}`));
+    }
+  }
+});
+
+test('roman numerals', () => {
+  const C = { tonic: 'C', mode: 'major' };
+  const Am = { tonic: 'A', mode: 'minor' };
+  assert.equal(romanFor('Dm7', C), 'ii7');
+  assert.equal(romanFor('G7', C), 'V7');
+  assert.equal(romanFor('Cmaj7', C), 'Imaj7');
+  assert.equal(romanFor('Bb', C), '♭VII');
+  assert.equal(romanFor('Bm7b5', C), 'viiø7');
+  assert.equal(romanFor('E7', Am), 'V7');
+});
+
+test('generate returns a playable groove for every built-in genre', () => {
+  for (const g of ['funk', 'motown', 'rock', 'reggae', 'jazz', 'latin']) {
+    assert.ok(generationPool(g).length >= 6, g);
+    const s = generate(g, { rand: () => 0.5 });
+    assert.equal(s.genre, g);
+    assert.ok(s.notes.length > 0);
+  }
+  assert.equal(generate('no-such-genre'), null);
+});
+
+test('quarter-note triplets render as triplets', () => {
+  const s = base({ quantize: 8, notes: [note(0, 8, 33), note(8, 8, 36), note(16, 8, 40)] });
+  const p = buildBars(s).bars[0].pieces.filter(x => !x.rest);
+  assert.ok(p.every(x => x.triplet));
+  assert.equal(sumTicks(buildBars(s).bars[0]), 48);
+  assert.equal(gridLabel(8), '1/4 triplet');
 });
 
 console.log(`${passed} tests passed`);

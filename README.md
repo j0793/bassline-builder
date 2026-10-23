@@ -8,19 +8,26 @@ Runs entirely in the browser. No build step, no server, no account.
 
 Works on desktop (mouse + keyboard) and phones (touch). Every action has a button; desktop also gets shortcuts.
 
+**Starting**
+- Every visit opens on a blank canvas. Resume your last session with one tap, or pick a genre and press **Generate** for a starting line (a genre rhythm over a typical progression for that style, or one of your saved basslines in that genre).
+
 **Writing**
 - Grid editor: tap/click to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. A note you drag or stretch overwrites the notes it lands on.
 - Techniques per note: ghost note (×), slide into the next note, hammer-on / pull-off into the next note. Shown on the grid, heard in playback, written in notation and tab.
-- Quantize 1/4 to 1/16 triplets, 1–8 bars, any time signature from 2/2 to 12/8.
+- Grid of 1/4, 1/8 or 1/16, each with a Triplet switch. 1–8 bars, any time signature from 2/2 to 12/8.
 - 4, 5 or 6 strings, each open string retunable. Fingering stays in low positions automatically.
 - Chord lane with chord-tone tinting, chord picker, "fits better" hints and next-chord suggestions.
+
+**Teaching panel**
+- Reads your line and chords and ranks what to try next: roots on the changes, a steady pulse, fifths and octaves, approach notes, chord tones on strong beats, a fill, genre moves (ghost notes for funk, an empty beat one for reggae, a walk for jazz) and where your progression could go next. Most suggestions have a one-tap button; undo reverses it.
+- Shows the progression in Roman numerals and flags chords that use notes outside the key.
 
 **Playing**
 - Loop, metronome, count-in, live BPM, tap tempo, bass and click volume sliders, bass mute.
 
 **Grooves**
 - Bank: 16 pads saved in your browser. Tap a pad to play it on loop. Tap another while it plays and it switches on the next loop. Empty pads save the current groove.
-- Presets: 12 starter grooves, two each for Funk, Motown/Soul, Rock, Reggae, Jazz walking and Latin. Load and play, or add to the bank.
+- Genres: six built-in (Funk, Motown/Soul, Rock, Reggae, Jazz walking, Latin) with two starters each. Create your own genres, edit or delete them, and save, update, rename or delete basslines in any genre. Generate draws from them.
 - Templates: 12 genre rhythm patterns that play over the chords you've set.
 - Share links carry the whole groove in the URL.
 
@@ -53,7 +60,8 @@ js/audio.js         Tone.js synth, metronome, loop
 js/theory.js        chord tones, note labels, key guess, chord suggestions
 js/fingering.js     string/fret assignment
 js/notation.js      ticks → note values → VexFlow staff + tab
-js/genres.js        genre templates and preset grooves
+js/genres.js        genres, templates, starters and Generate
+js/coach.js         teaching panel suggestions and Roman numerals
 js/share.js         bank pads, preferences and share links
 tests/run.mjs       unit tests for the logic
 ```

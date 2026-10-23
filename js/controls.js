@@ -1,8 +1,6 @@
 // Settings strip, tuning editor and the chord picker sheet.
-import { QUANTIZE, TUNINGS, MAX_BARS, changeTimeSig, setBars, beatTicks, barTicks } from './state.js';
+import { GRID_VALUES, TRIPLET_OF, STRAIGHT_OF, isTriplet, TUNINGS, MAX_BARS, changeTimeSig, setBars, beatTicks, barTicks } from './state.js';
 import { KEY_TONICS, FLATS, SHARPS, midiName, noteMidi, chroma, keyInfo, intervalLabel, pretty, prettyNote, guessKey, inferChord, suggestNext, chordInfo } from './theory.js';
-
-import { GENRES } from './genres.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const opt = (value, label, selected) =>
@@ -30,10 +28,6 @@ export function initSettings(store, ui, { toast, rerender }) {
         </div>
       </div>
       <div class="field-group">
-        <label for="genre">Genre</label>
-        <select id="genre">${GENRES.map(g => opt(g.id, g.name, g.id === s.genre)).join('')}</select>
-      </div>
-      <div class="field-group">
         <label for="ts-num">Time</label>
         <div class="row">
           <select id="ts-num">${Array.from({ length: 11 }, (_, i) => i + 2).map(n => opt(n, n, n === s.timeSig[0])).join('')}</select>
@@ -42,8 +36,13 @@ export function initSettings(store, ui, { toast, rerender }) {
         </div>
       </div>
       <div class="field-group">
-        <label for="quantize">Grid</label>
-        <select id="quantize">${QUANTIZE.map(q => opt(q.ticks, q.label, q.ticks === s.quantize)).join('')}</select>
+        <span class="label" id="grid-label">Grid</span>
+        <div class="row" role="group" aria-labelledby="grid-label">
+          <div class="seg">
+            ${GRID_VALUES.map(g => `<button type="button" data-grid="${g.ticks}" aria-pressed="${(STRAIGHT_OF[s.quantize] ?? s.quantize) === g.ticks}">${g.label}</button>`).join('')}
+          </div>
+          <button type="button" id="triplet" class="toggle" aria-pressed="${isTriplet(s.quantize)}" title="Split each beat into three">Triplet</button>
+        </div>
       </div>
       <div class="field-group">
         <span class="label" id="bars-label">Bars</span>
@@ -80,10 +79,6 @@ export function initSettings(store, ui, { toast, rerender }) {
       store.update(x => {
         x.key = { tonic: $('#key-tonic').value, mode: $('#key-mode').value };
       });
-    } else if (t.id === 'genre') {
-      store.update(x => {
-        x.genre = t.value;
-      });
     } else if (t.id === 'ts-num' || t.id === 'ts-den') {
       const ts = [Number($('#ts-num').value), Number($('#ts-den').value)];
       const before = s.notes.length;
@@ -93,10 +88,6 @@ export function initSettings(store, ui, { toast, rerender }) {
       });
       const lost = before - store.get().notes.length;
       if (lost > 0) toast(`${lost} note${lost > 1 ? 's' : ''} fell outside the shorter bar. Undo to get ${lost > 1 ? 'them' : 'it'} back.`);
-    } else if (t.id === 'quantize') {
-      store.update(x => {
-        x.quantize = Number(t.value);
-      });
     } else if (t.dataset.string != null) {
       const i = Number(t.dataset.string);
       store.update(x => {
@@ -116,6 +107,15 @@ export function initSettings(store, ui, { toast, rerender }) {
       const losing = b.id === 'bars-minus' ? s.notes.filter(n => n.start >= lastBarStart).length : 0;
       store.update(x => setBars(x, next));
       if (losing) toast(`Removed bar ${s.bars} and its ${losing} note${losing > 1 ? 's' : ''}. Undo to restore.`);
+    } else if (b.dataset.grid) {
+      const base = Number(b.dataset.grid);
+      store.update(x => {
+        x.quantize = isTriplet(x.quantize) ? TRIPLET_OF[base] : base;
+      });
+    } else if (b.id === 'triplet') {
+      store.update(x => {
+        x.quantize = isTriplet(x.quantize) ? STRAIGHT_OF[x.quantize] : TRIPLET_OF[x.quantize];
+      });
     } else if (b.dataset.rows) {
       ui.rows = b.dataset.rows;
       rerender();

@@ -3,6 +3,8 @@ const BANK = 'bassline-builder:bank';
 const OLD_LIBRARY = 'bassline-builder:library';
 const CURRENT = 'bassline-builder:current';
 const PREFS = 'bassline-builder:prefs';
+const GENRES = 'bassline-builder:genres';
+const EXAMPLES = 'bassline-builder:examples';
 export const PADS = 16;
 
 const read = k => {
@@ -37,6 +39,12 @@ export function setPad(i, groove) {
   slots[i] = groove ? structuredClone(groove) : null;
   return write(BANK, slots);
 }
+
+// Genres you create, and basslines saved under any genre (built-in or yours).
+export const customGenres = () => read(GENRES) ?? [];
+export const saveCustomGenres = list => write(GENRES, list);
+export const genreExamples = () => read(EXAMPLES) ?? [];
+export const saveGenreExamples = list => write(EXAMPLES, list);
 
 export const saveCurrent = s => write(CURRENT, s);
 export const loadCurrent = () => read(CURRENT);

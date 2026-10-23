@@ -51,9 +51,18 @@
 </header>
 
 <main>
-  <section class="panel title-row">
-    <label class="sr" for="title">Groove name</label>
-    <input id="title" class="title-input" type="text" maxlength="60" autocomplete="off">
+  <section class="panel start" aria-label="Start">
+    <div class="start-title">
+      <label class="sr" for="title">Groove name</label>
+      <input id="title" class="title-input" type="text" maxlength="60" autocomplete="off">
+    </div>
+    <div class="start-actions">
+      <label class="sr" for="gen-genre">Genre</label>
+      <select id="gen-genre" title="Genre for this groove and for Generate"></select>
+      <button id="generate" type="button" title="Load a typical line for this genre">Generate</button>
+      <button id="blank" type="button" class="ghost" title="Clear to an empty canvas">Blank canvas</button>
+      <button id="resume" type="button" class="ghost" hidden></button>
+    </div>
   </section>
 
   <details class="panel settings-panel" open>
@@ -67,9 +76,16 @@
     <div id="grid-scroll" class="grid-scroll"></div>
   </section>
 
-  <section class="panel learn" aria-labelledby="learn-h">
-    <h2 id="learn-h">What you wrote</h2>
-    <div id="learn-body"></div>
+  <section class="panel teach" aria-labelledby="teach-h">
+    <h2 id="teach-h">Teaching panel</h2>
+    <div id="note-detail"></div>
+    <div id="progression" class="progression"></div>
+    <h3 class="teach-h3">Next steps</h3>
+    <ol id="tips" class="tips"></ol>
+    <details class="bars-detail">
+      <summary>Bar by bar</summary>
+      <ul id="spans" class="spans"></ul>
+    </details>
   </section>
 
   <section class="panel sheet-music" aria-labelledby="sheet-h">
@@ -84,22 +100,18 @@
       <h2 id="grooves-h">Grooves</h2>
       <div class="seg tabs" role="group" aria-label="Show">
         <button type="button" data-tab="bank" aria-pressed="true">Bank</button>
-        <button type="button" data-tab="presets" aria-pressed="false">Presets</button>
+        <button type="button" data-tab="genres" aria-pressed="false">Genres</button>
         <button type="button" data-tab="templates" aria-pressed="false">Templates</button>
       </div>
     </div>
     <div id="genre-chips" class="chips" role="group" aria-label="Genre"></div>
-    <p id="genre-blurb" class="sub"></p>
 
     <div id="pane-bank">
       <p class="sub">Tap a pad to play it on loop. Tap another while it plays and it switches when the loop comes round. Empty pads save the groove in the editor.</p>
       <div id="pads" class="pads"></div>
       <div id="pad-actions" class="pad-actions"></div>
     </div>
-    <div id="pane-presets" hidden>
-      <p class="sub">Starter grooves, two per genre. Load one, change it, then save it to a pad.</p>
-      <ul id="preset-list" class="cards"></ul>
-    </div>
+    <div id="pane-genres" hidden></div>
     <div id="pane-templates" hidden>
       <p class="sub">A template plays its rhythm over the chords you've set, replacing this groove's notes. Undo brings them back.</p>
       <ul id="template-list" class="cards"></ul>
@@ -107,7 +119,6 @@
 
     <div class="grooves-foot">
       <button id="copy-link" type="button" class="ghost">Copy share link</button>
-      <button id="new" type="button" class="ghost">New groove</button>
     </div>
     <input id="share-out" class="share-out" type="text" readonly hidden aria-label="Share link">
   </section>

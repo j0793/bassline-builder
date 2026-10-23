@@ -1,9 +1,10 @@
-import { createStore, demoGroove, blankGroove, barTicks, beatTicks } from './state.js';
+import { createStore, emptyGroove, barTicks, beatTicks, uid } from './state.js';
 import { analyze, midiName, prettyNote, pretty, spanAt } from './theory.js';
 import { createGrid } from './grid.js';
 import { renderNotation, highlightNotation } from './notation.js';
 import { initSettings, initChordSheet } from './controls.js';
-import { GENRES, TEMPLATES, presets, buildPreset, applyTemplate, genreName } from './genres.js';
+import { TEMPLATES, presets, buildPreset, applyTemplate, genreName, allGenres, generate } from './genres.js';
+import { coach, romanFor, inKey } from './coach.js';
 import * as audio from './audio.js';
 import * as share from './share.js';
 
@@ -16,13 +17,13 @@ const prefs = share.loadPrefs();
 });
 const savePrefs = () => {
   const { loop, metronome, countIn, bassOn, bassVol, clickVol } = audio.opts;
-  share.savePrefs({ loop, metronome, countIn, bassOn, bassVol, clickVol, activePad: ui.activePad });
+  share.savePrefs({ loop, metronome, countIn, bassOn, bassVol, clickVol });
 };
 
 const ui = {
   selected: null,
   rows: 'all',
-  activePad: prefs.activePad ?? null, // which pad the groove in the editor came from
+  activePad: null, // which pad the groove in the editor came from
   dirty: false, // edited since it was loaded or saved
   queuedPad: null,
   tab: 'bank',
@@ -30,12 +31,12 @@ const ui = {
   confirmClear: false,
 };
 
+// Every visit starts on an open canvas. Last session's groove is one tap away.
 const fromLink = share.fromHash();
-const store = createStore(fromLink ?? share.loadCurrent() ?? demoGroove());
-if (fromLink) {
-  history.replaceState(null, '', location.pathname);
-  ui.activePad = null;
-}
+const lastSession = fromLink ? null : share.loadCurrent();
+const store = createStore(fromLink ?? emptyGroove());
+if (fromLink) history.replaceState(null, '', location.pathname);
+Object.assign(ui, { editingGenre: null, confirmGenreDelete: false, renaming: null, confirmExample: null, newGenre: false });
 let analysis = analyze(store.get());
 
 // ----- Toast -----
@@ -95,58 +96,81 @@ function setArt(id, art) {
   audio.ensureAudio().then(() => audio.preview(n.midi, n.art));
 }
 
-function renderLearn() {
+function renderNoteDetail() {
   const s = store.get();
   const a = analysis;
   const i = s.notes.findIndex(x => x.id === ui.selected);
   const n = s.notes[i];
   const bar = barTicks(s);
   const beat = beatTicks(s);
-  let html = '';
-
-  if (n) {
-    const info = a.notes[n.id];
-    const next = s.notes[i + 1];
-    const where = `bar ${Math.floor(n.start / bar) + 1}, beat ${(((n.start % bar) / beat) + 1).toFixed(2).replace(/\.?0+$/, '')}`;
-    const string = info.string != null ? `${prettyNote(s.tuning[info.string].replace(/-?\d+$/, ''))} string, ${info.fret === 0 ? 'open' : `fret ${info.fret}`}` : 'out of range for this tuning';
-    const role = info.approach
-      ? `${info.approach.chromatic ? 'Chromatic' : 'Scale-step'} approach into ${pretty(info.approach.to)}`
-      : info.cat === 'root' || info.cat === 'chord'
-        ? `${pretty(info.label)} of ${pretty(info.symbol)}, ${CAT_TEXT[info.cat]}`
-        : `${pretty(info.label)} over ${pretty(info.symbol)}, ${CAT_TEXT[info.cat]}`;
-    const up = next ? next.midi >= n.midi : true;
-    const help =
-      n.art === 'ghost' ? ART_HELP.ghost
-      : n.art === 'slide' ? ART_HELP.slide(next ? `${up ? 'up' : 'down'} to ${prettyNote(midiName(next.midi, a.flats))}` : 'into the next note')
-      : n.art === 'hammer' ? ART_HELP.hammer(up)
-      : '';
-    const artBtn = (art, label, key, disabled = false) =>
-      `<button type="button" data-art="${art}" aria-pressed="${(n.art ?? 'none') === art}" ${disabled ? 'disabled' : ''} title="Shortcut: ${key}">${label}<kbd>${key}</kbd></button>`;
-    html += `
-      <div class="now">
-        <div class="now-note cat-${info.cat}${info.approach ? ' approach' : ''}${n.art === 'ghost' ? ' ghosted' : ''}">${n.art === 'ghost' ? '×' : prettyNote(midiName(n.midi, a.flats))}</div>
-        <div class="now-text">
-          <p class="now-role">${role}</p>
-          <p class="now-meta">${string} · ${where}</p>
-        </div>
-        <button type="button" id="delete-note" class="ghost" title="Shortcut: Delete">Delete</button>
-      </div>
-      <div class="art-row">
-        <span class="label">Technique</span>
-        <div class="seg art-seg" role="group" aria-label="Technique">
-          ${artBtn('none', 'Normal', 'N')}
-          ${artBtn('ghost', 'Ghost ×', 'G')}
-          ${artBtn('slide', 'Slide', 'S', !next)}
-          ${artBtn('hammer', up ? 'Hammer-on' : 'Pull-off', 'H', !next)}
-        </div>
-      </div>
-      ${help ? `<p class="art-help">${help}</p>` : ''}`;
-  } else {
-    html += `<p class="hint">Tap a cell to add a note. Tap a note to see what it does and choose a technique, tap it again to delete it, drag it to move, drag its right edge to lengthen.</p>
+  if (!n) {
+    $('#note-detail').innerHTML = `<p class="hint">${s.notes.length ? 'Tap a note to see what it does and choose a technique. Tap it again to delete it, drag it to move, drag its right edge to lengthen.' : 'An open canvas. Tap the grid to place notes, or pick a genre above and press Generate for a starting idea.'}</p>
       <p class="hint keys">Keys: <kbd>Space</kbd> play · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move note · <kbd>Del</kbd> delete · <kbd>G</kbd> ghost · <kbd>S</kbd> slide · <kbd>H</kbd> hammer · <kbd>1</kbd>–<kbd>9</kbd> pads · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</p>`;
+    return;
   }
+  const info = a.notes[n.id];
+  const next = s.notes[i + 1];
+  const where = `bar ${Math.floor(n.start / bar) + 1}, beat ${(((n.start % bar) / beat) + 1).toFixed(2).replace(/\.?0+$/, '')}`;
+  const string = info.string != null ? `${prettyNote(s.tuning[info.string].replace(/-?\d+$/, ''))} string, ${info.fret === 0 ? 'open' : `fret ${info.fret}`}` : 'out of range for this tuning';
+  const role = info.approach
+    ? `${info.approach.chromatic ? 'Chromatic' : 'Scale-step'} approach into ${pretty(info.approach.to)}`
+    : info.cat === 'root' || info.cat === 'chord'
+      ? `${pretty(info.label)} of ${pretty(info.symbol)}, ${CAT_TEXT[info.cat]}`
+      : `${pretty(info.label)} over ${pretty(info.symbol)}, ${CAT_TEXT[info.cat]}`;
+  const up = next ? next.midi >= n.midi : true;
+  const help =
+    n.art === 'ghost' ? ART_HELP.ghost
+    : n.art === 'slide' ? ART_HELP.slide(next ? `${up ? 'up' : 'down'} to ${prettyNote(midiName(next.midi, a.flats))}` : 'into the next note')
+    : n.art === 'hammer' ? ART_HELP.hammer(up)
+    : '';
+  const artBtn = (art, label, key, disabled = false) =>
+    `<button type="button" data-art="${art}" aria-pressed="${(n.art ?? 'none') === art}" ${disabled ? 'disabled' : ''} title="Shortcut: ${key}">${label}<kbd>${key}</kbd></button>`;
+  $('#note-detail').innerHTML = `
+    <div class="now">
+      <div class="now-note cat-${info.cat}${info.approach ? ' approach' : ''}${n.art === 'ghost' ? ' ghosted' : ''}">${n.art === 'ghost' ? '×' : prettyNote(midiName(n.midi, a.flats))}</div>
+      <div class="now-text">
+        <p class="now-role">${role}</p>
+        <p class="now-meta">${string} · ${where}</p>
+      </div>
+      <button type="button" id="delete-note" class="ghost" title="Shortcut: Delete">Delete</button>
+    </div>
+    <div class="art-row">
+      <span class="label">Technique</span>
+      <div class="seg art-seg" role="group" aria-label="Technique">
+        ${artBtn('none', 'Normal', 'N')}
+        ${artBtn('ghost', 'Ghost ×', 'G')}
+        ${artBtn('slide', 'Slide', 'S', !next)}
+        ${artBtn('hammer', up ? 'Hammer-on' : 'Pull-off', 'H', !next)}
+      </div>
+    </div>
+    ${help ? `<p class="art-help">${help}</p>` : ''}`;
+}
 
-  html += `<ul class="spans">${a.summaries
+let tips = [];
+function renderTeach() {
+  const s = store.get();
+  const a = analysis;
+  const bar = barTicks(s);
+  const beat = beatTicks(s);
+  renderNoteDetail();
+
+  const keyName = `${prettyNote(s.key.tonic)} ${s.key.mode}`;
+  $('#progression').innerHTML = `<span class="label">Progression in ${keyName}</span>
+    <ol class="prog">${a.spans
+      .map(sp => `<li class="${inKey(sp.symbol, s.key) ? '' : 'outside'}" title="${inKey(sp.symbol, s.key) ? 'In the key' : 'Uses notes outside the key'}"><b>${pretty(sp.symbol)}</b><span>${romanFor(sp.symbol, s.key)}</span></li>`)
+      .join('')}</ol>`;
+
+  tips = coach(s, a);
+  $('#tips').innerHTML = tips
+    .map(
+      (t, i) => `<li class="tip">
+        <div class="tip-text"><b>${esc(t.title)}</b><p>${esc(t.why)}</p></div>
+        ${t.apply || t.template ? `<button type="button" data-tip="${i}" class="tip-btn">${esc(t.action ?? 'Try it')}</button>` : ''}
+      </li>`
+    )
+    .join('');
+
+  $('#spans').innerHTML = a.summaries
     .map(sm => {
       const bits = [];
       if (!sm.total) bits.push('No notes yet.');
@@ -156,17 +180,30 @@ function renderLearn() {
         if (sm.chromatic) bits.push(`${sm.chromatic} outside the key`);
         if (sm.approaches) bits.push(`${sm.approaches} approach note${sm.approaches > 1 ? 's' : ''}`);
       }
-      const one = sm.total ? (sm.rootOnOne ? 'Root lands on the chord change.' : 'The chord change doesn\'t start on the root. Fine on purpose, worth noticing.') : '';
+      const one = sm.total ? (sm.rootOnOne ? 'Root lands on the chord change.' : 'The chord change doesn\'t start on the root.') : '';
       const sounds = sm.inferred[0] && sm.inferred[0].symbol !== sm.symbol && sm.inferred[0].score > sm.fit + 1 ? ` These notes fit ${pretty(sm.inferred[0].symbol)} (${sm.inferred[0].roman}) better than ${pretty(sm.symbol)}.` : '';
       const pos = `Bar ${Math.floor(sm.start / bar) + 1}${sm.start % bar ? `, beat ${Math.round((sm.start % bar) / beat) + 1}` : ''}`;
       return `<li><span class="sp-chord">${pretty(sm.symbol)}</span><span class="sp-pos">${pos}</span><p>${bits.join(', ')}${sm.total ? '.' : ''} ${one}${sounds}</p></li>`;
     })
-    .join('')}</ul>`;
-
-  $('#learn-body').innerHTML = html;
+    .join('');
 }
 
-$('#learn-body').addEventListener('click', e => {
+$('#tips').addEventListener('click', e => {
+  const b = e.target.closest('[data-tip]');
+  if (!b) return;
+  const t = tips[Number(b.dataset.tip)];
+  if (!t) return;
+  ui.selected = null;
+  if (t.template) {
+    const tp = TEMPLATES.find(x => x.id === t.template);
+    store.update(s => applyTemplate(s, tp));
+  } else {
+    store.update(s => t.apply(s));
+  }
+  toast(`${t.action ?? 'Done'}. Undo to go back.`);
+});
+
+$('#note-detail').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b || !ui.selected) return;
   if (b.id === 'delete-note') {
@@ -182,6 +219,35 @@ $('#learn-body').addEventListener('click', e => {
       });
     } else setArt(ui.selected, b.dataset.art);
   }
+});
+
+// ----- Start bar: genre, Generate, blank canvas, resume -----
+function renderStart() {
+  const s = store.get();
+  const genres = allGenres();
+  $('#gen-genre').innerHTML = genres.map(g => `<option value="${g.id}"${g.id === s.genre ? ' selected' : ''}>${esc(g.name)}</option>`).join('');
+  const r = $('#resume');
+  r.hidden = !lastSession?.notes?.length || ui.resumed;
+  if (!r.hidden) r.textContent = `Resume "${lastSession.title}"`;
+}
+
+$('#gen-genre').addEventListener('change', e => store.update(s => (s.genre = e.target.value)));
+$('#generate').addEventListener('click', () => {
+  const s = store.get();
+  const g = generate(s.genre, { tuning: s.tuning });
+  if (!g) return toast(`No basslines in ${genreName(s.genre)} yet. Save one to it from Grooves → Genres, then Generate.`);
+  ui.resumed = true;
+  load(g, { message: `Generated "${g.title}". Edit it, then save it to a pad or a genre.` });
+  if (!audio.isPlaying()) startPlayback();
+});
+$('#blank').addEventListener('click', () => {
+  const s = store.get();
+  if (audio.isPlaying()) audio.stop();
+  load({ ...emptyGroove(s.tuning), genre: s.genre }, { message: 'Open canvas. Undo brings the last groove back.' });
+});
+$('#resume').addEventListener('click', () => {
+  ui.resumed = true;
+  load(lastSession, { message: `Back to "${lastSession.title}".` });
 });
 
 // ----- Transport -----
@@ -294,7 +360,8 @@ document.addEventListener('keydown', e => {
     store.redo();
   } else if (e.metaKey || e.ctrlKey || e.altKey) {
     return;
-  } else if (e.code === 'Space' && !e.target.closest('button')) {
+  } else if (e.code === 'Space' && !(e.target.closest('button') && e.target.matches(':focus-visible'))) {
+    // Space is play/stop, even right after clicking a button. Keyboard users on a button still press it.
     e.preventDefault();
     $('#play').click();
   } else if (/^[1-9]$/.test(e.key)) {
@@ -433,28 +500,106 @@ function rhythmStrip(t) {
   return `<span class="strip" aria-hidden="true">${cells.map((c, i) => `<i class="${c}${i % 4 === 0 ? ' beat' : ''}">${c === 'x' ? '×' : ''}</i>`).join('')}</span>`;
 }
 
+function renderChips() {
+  $('#genre-chips').innerHTML = [{ id: 'all', name: 'All' }, ...allGenres()]
+    .map(g => `<button type="button" data-genre="${g.id}" aria-pressed="${g.id === ui.genre}">${esc(g.name)}</button>`)
+    .join('') + `<button type="button" id="genre-new" class="chip-new" aria-pressed="${ui.newGenre}">+ New genre</button>`;
+}
+
+function genreForm(g) {
+  return `<form id="genre-form" class="genre-form" data-id="${g?.id ?? ''}">
+    <label for="genre-name">Genre name</label>
+    <input id="genre-name" type="text" maxlength="40" required value="${esc(g?.name ?? '')}" placeholder="e.g. Neo-soul">
+    <label for="genre-blurb">What defines it (optional)</label>
+    <input id="genre-blurb" type="text" maxlength="140" value="${esc(g?.blurb ?? '')}" placeholder="e.g. Lazy behind-the-beat feel, lots of slides">
+    <div class="row-btns">
+      <button type="submit">${g ? 'Save changes' : 'Create genre'}</button>
+      <button type="button" class="ghost" id="genre-cancel">Cancel</button>
+    </div>
+  </form>`;
+}
+
+function exampleCard(ex, mine) {
+  const g = mine ? ex.groove : ex;
+  const chords = mine ? g.chords.map(c => pretty(c.symbol)) : g.chords.map(pretty);
+  const renaming = mine && ui.renaming === ex.id;
+  return `<li class="card">
+    <div class="card-head">${renaming
+      ? `<form class="rename" data-id="${ex.id}"><label class="sr" for="rename-${ex.id}">New name</label><input id="rename-${ex.id}" type="text" maxlength="60" value="${esc(g.title)}"><button type="submit">Save</button></form>`
+      : `<b>${esc(g.title)}</b>`}<span class="tag">${mine ? 'Yours' : 'Starter'}</span></div>
+    <p class="card-meta">${chords.join(' · ')} · ${g.bpm} BPM</p>
+    ${!mine ? rhythmStrip(TEMPLATES.find(t => t.id === g.template)) : ''}
+    <div class="row-btns">
+      <button type="button" data-${mine ? 'ex' : 'preset'}="${mine ? ex.id : ex.index}">Load and play</button>
+      <button type="button" class="ghost" data-${mine ? 'ex' : 'preset'}-bank="${mine ? ex.id : ex.index}">Add to bank</button>
+      ${mine ? (ui.confirmExample === ex.id
+        ? `<span class="confirm">Delete? <button type="button" data-ex-del-yes="${ex.id}">Delete</button><button type="button" data-ex-del-no>Keep</button></span>`
+        : `<button type="button" class="ghost" data-ex-update="${ex.id}" title="Replace with the groove in the editor">Update</button>
+           <button type="button" class="ghost" data-ex-rename="${ex.id}">Rename</button>
+           <button type="button" class="ghost" data-ex-del="${ex.id}">Delete</button>`) : ''}
+    </div>
+  </li>`;
+}
+
+function renderGenresPane() {
+  const pane = $('#pane-genres');
+  const genres = allGenres();
+  const examples = share.genreExamples();
+  const starters = presets().map((p, index) => ({ ...p, index }));
+
+  if (ui.newGenre) {
+    pane.innerHTML = `<h3 class="pane-h">New genre</h3>${genreForm(null)}`;
+    return;
+  }
+  if (ui.genre === 'all') {
+    pane.innerHTML = `<p class="sub">Pick a genre to see its basslines, generate from it, or save your own lines to it. Make your own with "+ New genre".</p>
+      <ul class="cards">${genres
+        .map(g => {
+          const yours = examples.filter(e => e.genre === g.id).length;
+          const st = starters.filter(p => p.genre === g.id).length;
+          return `<li class="card"><div class="card-head"><b>${esc(g.name)}</b><span class="tag">${g.custom ? 'Yours' : 'Built-in'}</span></div>
+            <p class="card-meta">${esc(g.blurb || 'No description yet.')}</p>
+            <p class="card-meta">${st ? `${st} starter${st > 1 ? 's' : ''}` : 'No starters'} · ${yours} of yours</p>
+            <div class="row-btns"><button type="button" data-genre="${g.id}" class="ghost">Open</button></div></li>`;
+        })
+        .join('')}</ul>`;
+    return;
+  }
+
+  const g = genres.find(x => x.id === ui.genre);
+  if (!g) {
+    ui.genre = 'all';
+    return renderGenresPane();
+  }
+  const mine = examples.filter(e => e.genre === g.id);
+  const st = starters.filter(p => p.genre === g.id);
+  pane.innerHTML = `
+    ${ui.editingGenre === g.id ? genreForm(g) : `
+      <div class="genre-head">
+        <div><h3 class="pane-h">${esc(g.name)}</h3><p class="sub">${esc(g.blurb || 'No description yet.')}</p></div>
+        ${g.custom ? `<div class="row-btns">
+          <button type="button" class="ghost" id="genre-edit">Edit</button>
+          ${ui.confirmGenreDelete
+            ? `<span class="confirm">Delete ${esc(g.name)} and its ${mine.length} bassline${mine.length === 1 ? '' : 's'}? <button type="button" id="genre-del-yes">Delete</button><button type="button" id="genre-del-no">Keep</button></span>`
+            : `<button type="button" class="ghost" id="genre-del">Delete</button>`}
+        </div>` : ''}
+      </div>`}
+    <div class="row-btns genre-actions">
+      <button type="button" id="genre-generate">Generate from ${esc(g.name)}</button>
+      <button type="button" class="ghost" id="genre-save">Save current groove here</button>
+    </div>
+    <h4 class="list-h">Your basslines</h4>
+    ${mine.length ? `<ul class="cards">${mine.map(ex => exampleCard(ex, true)).join('')}</ul>` : `<p class="sub">None yet. Write or generate a line, then "Save current groove here".</p>`}
+    ${st.length ? `<h4 class="list-h">Starters</h4><ul class="cards">${st.map(p => exampleCard(p, false)).join('')}</ul>` : ''}`;
+}
+
 function renderGroovesPanes() {
   document.querySelectorAll('#grooves [data-tab]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === ui.tab));
-  document.querySelectorAll('#genre-chips [data-genre]').forEach(b => b.setAttribute('aria-pressed', b.dataset.genre === ui.genre));
+  renderChips();
   $('#pane-bank').hidden = ui.tab !== 'bank';
-  $('#pane-presets').hidden = ui.tab !== 'presets';
+  $('#pane-genres').hidden = ui.tab !== 'genres';
   $('#pane-templates').hidden = ui.tab !== 'templates';
-  const g = GENRES.find(x => x.id === ui.genre);
-  $('#genre-blurb').textContent = g ? g.blurb : 'Pick a genre to see its presets and rhythm templates, or browse them all.';
-
-  $('#preset-list').innerHTML = presets()
-    .map((p, i) => ({ p, i }))
-    .filter(({ p }) => ui.genre === 'all' || p.genre === ui.genre)
-    .map(
-      ({ p, i }) => `<li class="card">
-        <div class="card-head"><b>${esc(p.title)}</b><span class="tag">${genreName(p.genre)}</span></div>
-        <p class="card-meta">${p.chords.map(pretty).join(' · ')} · ${p.bpm} BPM</p>
-        ${rhythmStrip(TEMPLATES.find(t => t.id === p.template))}
-        <div class="row-btns"><button type="button" data-preset="${i}">Load and play</button><button type="button" class="ghost" data-preset-bank="${i}">Add to bank</button></div>
-      </li>`
-    )
-    .join('');
-
+  renderGenresPane();
   $('#template-list').innerHTML = TEMPLATES.filter(t => ui.genre === 'all' || t.genre === ui.genre)
     .map(
       t => `<li class="card">
@@ -464,32 +609,86 @@ function renderGroovesPanes() {
         <div class="row-btns"><button type="button" data-template="${t.id}">Apply to my chords</button></div>
       </li>`
     )
-    .join('');
+    .join('') || '<li class="sub">No rhythm templates for this genre yet. Templates come with the built-in genres.</li>';
+}
+
+function addToBank(groove) {
+  const i = firstEmptyPad();
+  if (i < 0) return toast('The bank is full. Clear a pad first.');
+  share.setPad(i, groove);
+  renderPads();
+  toast(`Added "${groove.title}" to pad ${i + 1}.`);
+}
+
+function playGroove(groove, message) {
+  ui.resumed = true;
+  load(groove, { message });
+  if (!audio.isPlaying()) startPlayback();
 }
 
 $('#grooves').addEventListener('click', e => {
   const b = e.target.closest('button');
-  if (!b) return;
-  if (b.dataset.tab) {
-    ui.tab = b.dataset.tab;
-    renderGroovesPanes();
-  } else if (b.dataset.genre) {
-    ui.genre = b.dataset.genre;
-    renderGroovesPanes();
+  if (!b || b.type === 'submit') return;
+  const d = b.dataset;
+  const examples = share.genreExamples();
+  const tuning = store.get().tuning;
+  if (d.tab) ui.tab = d.tab;
+  else if (d.genre) {
+    ui.genre = d.genre;
+    ui.newGenre = false;
+    ui.editingGenre = null;
+    ui.confirmGenreDelete = false;
     renderPads();
-  } else if (b.dataset.preset) {
-    const p = presets()[Number(b.dataset.preset)];
-    load(buildPreset(p, store.get().tuning), { message: `Loaded "${p.title}". Save it to a pad to keep your edits.` });
-    if (!audio.isPlaying()) startPlayback();
-  } else if (b.dataset.presetBank) {
-    const p = presets()[Number(b.dataset.presetBank)];
-    const i = firstEmptyPad();
-    if (i < 0) return toast('The bank is full. Clear a pad first.');
-    share.setPad(i, buildPreset(p, store.get().tuning));
-    renderPads();
-    toast(`Added "${p.title}" to pad ${i + 1}.`);
-  } else if (b.dataset.template) {
-    const t = TEMPLATES.find(x => x.id === b.dataset.template);
+  } else if (b.id === 'genre-new') {
+    ui.newGenre = !ui.newGenre;
+    ui.tab = 'genres';
+  } else if (b.id === 'genre-cancel') {
+    ui.newGenre = false;
+    ui.editingGenre = null;
+  } else if (b.id === 'genre-edit') ui.editingGenre = ui.genre;
+  else if (b.id === 'genre-del') ui.confirmGenreDelete = true;
+  else if (b.id === 'genre-del-no') ui.confirmGenreDelete = false;
+  else if (b.id === 'genre-del-yes') {
+    const name = genreName(ui.genre);
+    share.saveCustomGenres(share.customGenres().filter(g => g.id !== ui.genre));
+    share.saveGenreExamples(examples.filter(x => x.genre !== ui.genre));
+    if (store.get().genre === ui.genre) store.update(s => (s.genre = 'funk'), { history: false });
+    ui.genre = 'all';
+    ui.confirmGenreDelete = false;
+    toast(`Deleted ${name}.`);
+  } else if (b.id === 'genre-generate') {
+    const g = generate(ui.genre, { tuning });
+    if (!g) return toast(`No basslines in ${genreName(ui.genre)} yet. Save one here first.`);
+    playGroove(g, `Generated "${g.title}".`);
+  } else if (b.id === 'genre-save') {
+    const s = store.get();
+    const ex = { id: uid(), genre: ui.genre, groove: { ...structuredClone(s), genre: ui.genre } };
+    if (!share.saveGenreExamples([...examples, ex])) return toast('This browser blocked saving.');
+    store.update(t => (t.genre = ui.genre), { history: false });
+    toast(`Saved "${s.title}" to ${genreName(ui.genre)}.`);
+  } else if (d.preset) {
+    const p = presets()[Number(d.preset)];
+    playGroove(buildPreset(p, tuning), `Loaded "${p.title}". Save it to a pad or genre to keep your edits.`);
+  } else if (d.presetBank) addToBank(buildPreset(presets()[Number(d.presetBank)], tuning));
+  else if (d.ex) {
+    const ex = examples.find(x => x.id === d.ex);
+    if (ex) playGroove(ex.groove, `Loaded "${ex.groove.title}".`);
+  } else if (d.exBank) {
+    const ex = examples.find(x => x.id === d.exBank);
+    if (ex) addToBank(ex.groove);
+  } else if (d.exUpdate) {
+    const s = store.get();
+    share.saveGenreExamples(examples.map(x => (x.id === d.exUpdate ? { ...x, groove: { ...structuredClone(s), genre: x.genre, title: x.groove.title } } : x)));
+    toast('Updated with the groove in the editor.');
+  } else if (d.exRename) ui.renaming = d.exRename;
+  else if (d.exDel) ui.confirmExample = d.exDel;
+  else if ('exDelNo' in d) ui.confirmExample = null;
+  else if (d.exDelYes) {
+    share.saveGenreExamples(examples.filter(x => x.id !== d.exDelYes));
+    ui.confirmExample = null;
+    toast('Deleted.');
+  } else if (d.template) {
+    const t = TEMPLATES.find(x => x.id === d.template);
     let meter = false;
     store.update(s => {
       meter = applyTemplate(s, t).changedMeter;
@@ -497,15 +696,38 @@ $('#grooves').addEventListener('click', e => {
     ui.selected = null;
     toast(`Applied "${t.name}" over your chords${meter ? ' and switched to 4/4' : ''}. Undo to go back.`);
   } else if (b.id === 'copy-link') {
-    copyLink();
-  } else if (b.id === 'new') {
-    if (audio.isPlaying()) audio.stop();
-    ui.selected = null;
-    ui.activePad = null;
-    store.replace(blankGroove(store.get()), { kind: 'load' });
-    toast('New groove. Undo brings the last one back.');
-    renderPads();
+    return copyLink();
+  } else return;
+  renderGroovesPanes();
+  renderStart();
+});
+
+$('#grooves').addEventListener('submit', e => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === 'genre-form') {
+    const name = $('#genre-name').value.trim();
+    const blurb = $('#genre-blurb').value.trim();
+    if (!name) return toast('Give the genre a name.');
+    const list = share.customGenres();
+    if (f.dataset.id) {
+      share.saveCustomGenres(list.map(g => (g.id === f.dataset.id ? { ...g, name, blurb } : g)));
+      ui.editingGenre = null;
+      toast(`Saved ${name}.`);
+    } else {
+      const id = `g-${uid()}`;
+      share.saveCustomGenres([...list, { id, name, blurb }]);
+      ui.newGenre = false;
+      ui.genre = id;
+      toast(`Created ${name}. Save basslines to it, then Generate from it.`);
+    }
+  } else if (f.classList.contains('rename')) {
+    const title = f.querySelector('input').value.trim();
+    if (title) share.saveGenreExamples(share.genreExamples().map(x => (x.id === f.dataset.id ? { ...x, groove: { ...x.groove, title } } : x)));
+    ui.renaming = null;
   }
+  renderGroovesPanes();
+  renderStart();
 });
 
 async function copyLink() {
@@ -544,7 +766,8 @@ function renderAll({ notation = true } = {}) {
   grid.render(s, analysis);
   settings.render();
   renderTransport();
-  renderLearn();
+  renderTeach();
+  renderStart();
   renderNowChord();
   chordSheet.refresh();
   if (notation) drawNotation();
@@ -575,9 +798,6 @@ new ResizeObserver(([e]) => {
   }
 }).observe($('#notation'));
 
-$('#genre-chips').innerHTML = [{ id: 'all', name: 'All' }, ...GENRES]
-  .map(g => `<button type="button" data-genre="${g.id}" aria-pressed="false">${g.name}</button>`)
-  .join('');
 
 renderAll();
 renderPads();
