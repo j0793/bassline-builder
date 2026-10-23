@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bassline Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Write a bassline on a grid, hear it loop with a metronome, and read it as notation and tab.">
+<meta name="theme-color" content="#eef2f0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/tone@15.0.4/build/Tone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tonal@6.4.2/browser/tonal.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<header class="transport">
+  <div class="transport-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>Bassline Builder</span>
+    </div>
+    <div class="transport-controls">
+      <button id="play" class="play" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>Play</span></button>
+      <div class="bpm" role="group" aria-label="Tempo">
+        <button id="bpm-down" type="button" aria-label="Slower">−</button>
+        <label class="bpm-field"><input id="bpm" type="number" inputmode="numeric" min="40" max="240" aria-label="Beats per minute"><span>BPM</span></label>
+        <button id="bpm-up" type="button" aria-label="Faster">+</button>
+        <button id="tap" type="button" class="ghost">Tap</button>
+      </div>
+      <div class="toggles" role="group" aria-label="Playback options">
+        <button id="loop" type="button" class="toggle" aria-pressed="true">Loop</button>
+        <button id="metro" type="button" class="toggle" aria-pressed="true">Click</button>
+        <button id="countin" type="button" class="toggle" aria-pressed="false">Count-in</button>
+        <button id="bass" type="button" class="toggle" aria-pressed="true">Bass</button>
+      </div>
+      <div class="history" role="group" aria-label="History">
+        <button id="undo" type="button" class="ghost" aria-label="Undo">Undo</button>
+        <button id="redo" type="button" class="ghost" aria-label="Redo">Redo</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel title-row">
+    <label class="sr" for="title">Groove name</label>
+    <input id="title" class="title-input" type="text" maxlength="60" autocomplete="off">
+  </section>
+
+  <details class="panel settings-panel" open>
+    <summary>Key, time, grid and tuning</summary>
+    <div id="settings" class="settings"></div>
+  </details>
+
+  <section class="panel editor" aria-labelledby="editor-h">
+    <h2 id="editor-h" class="sr">Grid editor</h2>
+    <div id="now-chord" class="now-chord" aria-live="polite"></div>
+    <div id="grid-scroll" class="grid-scroll"></div>
+  </section>
+
+  <section class="panel learn" aria-labelledby="learn-h">
+    <h2 id="learn-h">What you wrote</h2>
+    <div id="learn-body"></div>
+  </section>
+
+  <section class="panel sheet-music" aria-labelledby="sheet-h">
+    <h2 id="sheet-h">Notation and tab</h2>
+    <p class="sub">Bass sounds an octave lower than written. Tab numbers are frets, top line is your highest string.</p>
+    <div id="notation" class="notation"></div>
+    <p id="notation-note" class="sub warn" hidden>Some rhythms mix straight and triplet steps in one beat, so they're shown approximately.</p>
+  </section>
+
+  <section id="library" class="panel library" aria-labelledby="lib-h">
+    <h2 id="lib-h">Your grooves</h2>
+    <div class="lib-actions">
+      <button id="save" type="button">Save</button>
+      <button id="copy-link" type="button" class="ghost">Copy share link</button>
+      <button id="new" type="button" class="ghost">New groove</button>
+      <button id="demo" type="button" class="ghost">Load starter</button>
+    </div>
+    <input id="share-out" class="share-out" type="text" readonly hidden aria-label="Share link">
+    <ul id="library-list" class="library-list"></ul>
+  </section>
+</main>
+
+<div id="chord-sheet" class="sheet-backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="chord-title">
+    <header>
+      <h3 id="chord-title">Chord</h3>
+      <button id="chord-close" type="button" class="ghost">Done</button>
+    </header>
+    <div class="sheet-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

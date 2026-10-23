@@ -1,0 +1,7 @@
+{
+  "name": "bassline-builder",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node tests/run.mjs" },
+  "devDependencies": { "tonal": "6.4.2" }
+}
