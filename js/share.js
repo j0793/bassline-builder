@@ -1,6 +1,9 @@
-// Saved grooves (this browser only) and share links (the groove packed into the URL).
-const LIB = 'bassline-builder:library';
+// The bank (16 pads, kept in this browser) and share links (the groove packed into the URL).
+const BANK = 'bassline-builder:bank';
+const OLD_LIBRARY = 'bassline-builder:library';
 const CURRENT = 'bassline-builder:current';
+const PREFS = 'bassline-builder:prefs';
+export const PADS = 16;
 
 const read = k => {
   try {
@@ -18,27 +21,30 @@ const write = (k, v) => {
   }
 };
 
-export const library = () => read(LIB) ?? [];
+export function bank() {
+  let slots = read(BANK);
+  if (!Array.isArray(slots)) {
+    // First run after the update: move any grooves saved in the old list onto pads.
+    const old = read(OLD_LIBRARY) ?? [];
+    slots = Array.from({ length: PADS }, (_, i) => old[i]?.groove ?? null);
+    write(BANK, slots);
+  }
+  return Array.from({ length: PADS }, (_, i) => slots[i] ?? null);
+}
+
+export function setPad(i, groove) {
+  const slots = bank();
+  slots[i] = groove ? structuredClone(groove) : null;
+  return write(BANK, slots);
+}
+
 export const saveCurrent = s => write(CURRENT, s);
 export const loadCurrent = () => read(CURRENT);
-
-export function saveToLibrary(s) {
-  const lib = library();
-  const entry = { id: s.libId ?? crypto.randomUUID(), title: s.title, saved: Date.now(), groove: s };
-  entry.groove = { ...s, libId: entry.id };
-  const i = lib.findIndex(x => x.id === entry.id);
-  if (i >= 0) lib[i] = entry;
-  else lib.unshift(entry);
-  return write(LIB, lib) ? entry : null;
-}
-
-export function deleteFromLibrary(id) {
-  write(LIB, library().filter(x => x.id !== id));
-}
+export const loadPrefs = () => read(PREFS) ?? {};
+export const savePrefs = p => write(PREFS, p);
 
 export function shareLink(s) {
-  const { libId, ...rest } = s;
-  const packed = globalThis.LZString?.compressToEncodedURIComponent(JSON.stringify(rest));
+  const packed = globalThis.LZString?.compressToEncodedURIComponent(JSON.stringify(s));
   return `${location.origin}${location.pathname}#g=${packed}`;
 }
 

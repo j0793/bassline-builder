@@ -1,5 +1,5 @@
 // Piano-roll editor: rows are pitches (high at the top), columns are grid steps.
-import { barTicks, beatTicks, totalTicks, uid } from './state.js';
+import { barTicks, beatTicks, totalTicks, uid, claim } from './state.js';
 import { midiName, prettyNote, pretty } from './theory.js';
 
 export const ROW_H = 28;
@@ -106,16 +106,33 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
         f += `<div class="${cls}" style="top:${i * ROW_H}px;left:${sp.start * ppt}px;width:${(sp.end - sp.start) * ppt}px"></div>`;
       });
     });
-    s.notes.forEach(n => {
+    let links = '';
+    s.notes.forEach((n, i) => {
       const info = a.notes[n.id] ?? {};
       const sel = n.id === ui.selected ? ' selected' : '';
       const appr = info.approach ? ' approach' : '';
-      const label = info.approach ? '→' : info.label;
-      f += `<div class="note cat-${info.cat}${appr}${sel}" data-id="${n.id}"
+      const art = n.art ? ` art-${n.art}` : '';
+      const label = n.art === 'ghost' ? '×' : info.approach ? '→' : info.label;
+      const next = s.notes[i + 1];
+      if ((n.art === 'slide' || n.art === 'hammer') && next) {
+        const x1 = (n.start + n.dur) * ppt - 2;
+        const y1 = rowOf.get(n.midi) * ROW_H + ROW_H / 2;
+        const x2 = next.start * ppt + 2;
+        const y2 = rowOf.get(next.midi) * ROW_H + ROW_H / 2;
+        if (n.art === 'slide') {
+          links += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="lk-slide"/>`;
+        } else {
+          const lift = Math.min(y1, y2) - 14;
+          links += `<path d="M${x1 - 6} ${y1 - 8} Q ${(x1 + x2) / 2} ${lift} ${x2 + 6} ${y2 - 8}" class="lk-hammer"/>`;
+          links += `<text x="${(x1 + x2) / 2}" y="${lift + 3}" class="lk-label">${next.midi >= n.midi ? 'H' : 'P'}</text>`;
+        }
+      }
+      f += `<div class="note cat-${info.cat}${appr}${art}${sel}" data-id="${n.id}"
         style="left:${n.start * ppt + 1}px;top:${rowOf.get(n.midi) * ROW_H + 2}px;width:${Math.max(6, n.dur * ppt - 2)}px"
         aria-label="${prettyNote(midiName(n.midi, a.flats))}, ${info.label ?? ''}">
         <span>${label ?? ''}</span>${sel ? '<i class="handle" aria-hidden="true"></i>' : ''}</div>`;
     });
+    f += `<svg class="links" width="${W}" height="${H}" aria-hidden="true">${links}</svg>`;
     field.innerHTML = f;
     field.appendChild(playhead);
   }
@@ -176,17 +193,19 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
       drag = null;
       if (mode === 'move' && preview) {
         store.update(s => {
-          s.notes = s.notes.filter(x => x.id === n.id || x.start !== preview.start);
           const x = s.notes.find(x => x.id === n.id);
           x.start = preview.start;
           if (x.midi !== preview.midi) x.string = null;
           x.midi = preview.midi;
+          claim(s, n.id);
         });
         onSelect(n.id);
       } else if (mode === 'resize' && preview) {
         store.update(s => {
           s.notes.find(x => x.id === n.id).dur = preview.dur;
+          claim(s, n.id);
         });
+        onSelect(n.id);
       } else if (mode === 'press') {
         if (wasSelected) {
           store.update(s => {
@@ -206,10 +225,8 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
       const midi = geom.rows[rowAt(p.y)];
       const id = uid();
       store.update(s => {
-        s.notes = s.notes.filter(x => x.start !== start);
-        const next = s.notes.filter(x => x.start > start).sort((a, b) => a.start - b.start)[0];
-        const dur = Math.min(s.quantize, (next?.start ?? Infinity) - start);
-        s.notes.push({ id, start, dur, midi, string: null });
+        s.notes.push({ id, start, dur: s.quantize, midi, string: null, art: null });
+        claim(s, id);
       });
       onSelect(id);
       onPreview(midi);
@@ -226,7 +243,8 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
   });
 
   // Keyboard: arrows move the selected note, Delete removes it.
-  field.addEventListener('keydown', e => {
+  document.addEventListener('keydown', e => {
+    if (e.target.closest('input, select, textarea') || !document.querySelector('#chord-sheet').hidden) return;
     const id = ui.selected;
     if (!id || !geom) return;
     const s = store.get();
@@ -253,10 +271,10 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
     const midi = geom.rows[row];
     const start = Math.max(0, Math.min(geom.total - s.quantize, n.start + mv[0]));
     store.update(t => {
-      t.notes = t.notes.filter(x => x.id === id || x.start !== start);
       const x = t.notes.find(x => x.id === id);
       if (x.midi !== midi) x.string = null;
       Object.assign(x, { start, midi });
+      claim(t, id);
     });
     if (mv[1]) onPreview(midi);
   });

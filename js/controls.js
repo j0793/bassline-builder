@@ -2,6 +2,8 @@
 import { QUANTIZE, TUNINGS, MAX_BARS, changeTimeSig, setBars, beatTicks, barTicks } from './state.js';
 import { KEY_TONICS, FLATS, SHARPS, midiName, noteMidi, chroma, keyInfo, intervalLabel, pretty, prettyNote, guessKey, inferChord, suggestNext, chordInfo } from './theory.js';
 
+import { GENRES } from './genres.js';
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const opt = (value, label, selected) =>
   `<option value="${value}"${selected ? ' selected' : ''}>${label}</option>`;
@@ -26,6 +28,10 @@ export function initSettings(store, ui, { toast, rerender }) {
           <select id="key-mode" aria-label="Mode">${opt('major', 'major', s.key.mode === 'major')}${opt('minor', 'minor', s.key.mode === 'minor')}</select>
           <button id="key-guess" class="ghost" type="button">Guess</button>
         </div>
+      </div>
+      <div class="field-group">
+        <label for="genre">Genre</label>
+        <select id="genre">${GENRES.map(g => opt(g.id, g.name, g.id === s.genre)).join('')}</select>
       </div>
       <div class="field-group">
         <label for="ts-num">Time</label>
@@ -73,6 +79,10 @@ export function initSettings(store, ui, { toast, rerender }) {
     if (t.id === 'key-tonic' || t.id === 'key-mode') {
       store.update(x => {
         x.key = { tonic: $('#key-tonic').value, mode: $('#key-mode').value };
+      });
+    } else if (t.id === 'genre') {
+      store.update(x => {
+        x.genre = t.value;
       });
     } else if (t.id === 'ts-num' || t.id === 'ts-den') {
       const ts = [Number($('#ts-num').value), Number($('#ts-den').value)];

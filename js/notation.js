@@ -177,6 +177,9 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
   lines.forEach((line, li) => line.forEach((item, ci) => layout.set(item.bar.index, { x: item.x, w: item.w, line: li, col: ci })));
 
   const ties = [];
+  const noteById = new Map(s.notes.map(n => [n.id, n]));
+  const heads = new Map(); // first drawn piece of each note
+  const tails = new Map(); // last drawn piece of each note
   let prevLast = null; // last staff note of the previous bar, for ties across bars
 
   bars.forEach((bar, bi) => {
@@ -216,8 +219,9 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
       } else {
         const name = midiName(p.midi + 12, analysis.flats); // bass is written an octave up
         const [, letter, acc, oct] = name.match(/^([A-G])([#b]?)(-?\d+)$/);
+        const isGhost = noteById.get(p.noteId)?.art === 'ghost';
         sn = new VF.StaveNote({
-          keys: [`${letter.toLowerCase()}${acc}/${oct}`],
+          keys: [`${letter.toLowerCase()}${acc}/${oct}${isGhost ? '/x2' : ''}`],
           duration: p.vf.replace('d', ''),
           dots: p.dots,
           clef: 'bass',
@@ -229,7 +233,7 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
           if (!p.tied && (!pos || pos.string == null)) tn = new VF.TabNote({ positions: [{ str: 1, fret: '?' }], duration: p.vf.replace('d', ''), dots: p.dots });
         } else {
           tn = new VF.TabNote({
-            positions: [{ str: strings - pos.string, fret: pos.fret }],
+            positions: [{ str: strings - pos.string, fret: isGhost ? 'x' : pos.fret }],
             duration: p.vf.replace('d', ''),
             dots: p.dots,
           });
@@ -259,6 +263,10 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
         prevLast = null;
       }
 
+      if (!p.rest) {
+        if (!heads.has(p.noteId)) heads.set(p.noteId, { sn, tn, line });
+        tails.set(p.noteId, { sn, line });
+      }
       staffNotes.push(sn);
       tabNotes.push(tn);
       pieceEls.push({ start: p.start, end: p.start + p.dur, noteId: p.noteId, sn, tn });
@@ -304,6 +312,36 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
     parts.forEach(p =>
       new VF.StaveTie({ ...p, firstIndexes: [0], lastIndexes: [0] }).setContext(ctx).draw()
     );
+  });
+
+  // Slides and hammer-ons / pull-offs connect a note to the one after it.
+  s.notes.forEach((n, i) => {
+    const next = s.notes[i + 1];
+    if (!next || (n.art !== 'slide' && n.art !== 'hammer')) return;
+    const a = tails.get(n.id);
+    const ah = heads.get(n.id);
+    const b = heads.get(next.id);
+    if (!a || !b || a.line !== b.line) return;
+    const up = next.midi >= n.midi;
+    const idx = { firstIndexes: [0], lastIndexes: [0] };
+    try {
+      if (n.art === 'slide') {
+        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...idx }, 'sl.').setContext(ctx).draw();
+        if (ah.tn instanceof VF.TabNote && b.tn instanceof VF.TabNote) {
+          new VF.TabSlide({ firstNote: ah.tn, lastNote: b.tn, ...idx }, up ? VF.TabSlide.SLIDE_UP : VF.TabSlide.SLIDE_DOWN)
+            .setContext(ctx)
+            .draw();
+        }
+      } else {
+        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...idx }, up ? 'H' : 'P').setContext(ctx).draw();
+        if (ah.tn instanceof VF.TabNote && b.tn instanceof VF.TabNote) {
+          const make = up ? VF.TabTie.createHammeron : VF.TabTie.createPulloff;
+          make({ firstNote: ah.tn, lastNote: b.tn, ...idx }).setContext(ctx).draw();
+        }
+      }
+    } catch (err) {
+      console.warn('Could not draw articulation', err);
+    }
   });
 
   pieceEls.forEach(p => {

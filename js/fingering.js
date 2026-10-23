@@ -36,12 +36,13 @@ export function assignFingering(notes, opens) {
     const prev = layers[i - 1];
     layers.push(
       options.map(p => {
-        const base = p.fret * 0.06 + (p.fret === 0 ? 0.15 : 0);
+        // Low positions are easier to read and play; above the 7th fret costs extra.
+        const base = p.fret * 0.1 + Math.max(0, p.fret - 7) * 0.3 + (p.fret === 0 ? 0.1 : 0);
         if (!prev) return { cost: base, hand: p.fret || null, back: -1, p };
         let best = null;
         prev.forEach((q, k) => {
           const { shift, hand } = reach(q.hand, p.fret);
-          const cost = q.cost + base + shift * 1.4 + (shift > 0 ? 0.6 : 0) + Math.abs(p.string - q.p.string) * 0.25;
+          const cost = q.cost + base + shift * 1.4 + (shift > 0 ? 0.6 : 0) + Math.abs(p.string - q.p.string) * 0.08; // crossing strings is cheap on bass
           if (!best || cost < best.cost) best = { cost, hand, back: k, p };
         });
         return best;

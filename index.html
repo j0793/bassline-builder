@@ -38,6 +38,10 @@
         <button id="countin" type="button" class="toggle" aria-pressed="false">Count-in</button>
         <button id="bass" type="button" class="toggle" aria-pressed="true">Bass</button>
       </div>
+      <div class="mix" role="group" aria-label="Volume">
+        <label class="vol"><span>Bass</span><input id="vol-bass" type="range" min="0" max="100" step="1"><output id="vol-bass-out"></output></label>
+        <label class="vol"><span>Click</span><input id="vol-click" type="range" min="0" max="100" step="1"><output id="vol-click-out"></output></label>
+      </div>
       <div class="history" role="group" aria-label="History">
         <button id="undo" type="button" class="ghost" aria-label="Undo">Undo</button>
         <button id="redo" type="button" class="ghost" aria-label="Redo">Redo</button>
@@ -75,16 +79,37 @@
     <p id="notation-note" class="sub warn" hidden>Some rhythms mix straight and triplet steps in one beat, so they're shown approximately.</p>
   </section>
 
-  <section id="library" class="panel library" aria-labelledby="lib-h">
-    <h2 id="lib-h">Your grooves</h2>
-    <div class="lib-actions">
-      <button id="save" type="button">Save</button>
+  <section id="grooves" class="panel grooves" aria-labelledby="grooves-h">
+    <div class="grooves-head">
+      <h2 id="grooves-h">Grooves</h2>
+      <div class="seg tabs" role="group" aria-label="Show">
+        <button type="button" data-tab="bank" aria-pressed="true">Bank</button>
+        <button type="button" data-tab="presets" aria-pressed="false">Presets</button>
+        <button type="button" data-tab="templates" aria-pressed="false">Templates</button>
+      </div>
+    </div>
+    <div id="genre-chips" class="chips" role="group" aria-label="Genre"></div>
+    <p id="genre-blurb" class="sub"></p>
+
+    <div id="pane-bank">
+      <p class="sub">Tap a pad to play it on loop. Tap another while it plays and it switches when the loop comes round. Empty pads save the groove in the editor.</p>
+      <div id="pads" class="pads"></div>
+      <div id="pad-actions" class="pad-actions"></div>
+    </div>
+    <div id="pane-presets" hidden>
+      <p class="sub">Starter grooves, two per genre. Load one, change it, then save it to a pad.</p>
+      <ul id="preset-list" class="cards"></ul>
+    </div>
+    <div id="pane-templates" hidden>
+      <p class="sub">A template plays its rhythm over the chords you've set, replacing this groove's notes. Undo brings them back.</p>
+      <ul id="template-list" class="cards"></ul>
+    </div>
+
+    <div class="grooves-foot">
       <button id="copy-link" type="button" class="ghost">Copy share link</button>
       <button id="new" type="button" class="ghost">New groove</button>
-      <button id="demo" type="button" class="ghost">Load starter</button>
     </div>
     <input id="share-out" class="share-out" type="text" readonly hidden aria-label="Share link">
-    <ul id="library-list" class="library-list"></ul>
   </section>
 </main>
 

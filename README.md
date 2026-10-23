@@ -4,17 +4,27 @@ Write a bassline on a grid, hear it loop with a metronome, and read it back as b
 
 Runs entirely in the browser. No build step, no server, no account.
 
-## Features (Phase 1)
+## Features
 
-- Grid editor: tap to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. Arrow keys and Delete work on desktop.
-- Quantize: 1/4, 1/8, 1/16, 1/8 triplet, 1/16 triplet. Switching keeps your notes.
-- 1–8 bars, any time signature from 2/2 to 12/8 (6/8, 9/8, 12/8 count in dotted quarters).
-- 4, 5 or 6 strings, each open string retunable (low B, high C, drop D, anything).
-- Chord lane: tap a chord to change it, split it mid-bar, or remove a change. The chord tones are tinted on the grid.
-- Chord help: which diatonic chord your notes fit best, and common next chords with Roman numerals.
-- Playback: loop, metronome, count-in, live BPM, tap tempo, bass mute (play along to the click).
-- Notation + tab with chord symbols, repeat signs when looping, and auto fingering that keeps your hand in position.
-- Key guess, undo/redo, save to this browser, and share links that carry the whole groove in the URL.
+Works on desktop (mouse + keyboard) and phones (touch). Every action has a button; desktop also gets shortcuts.
+
+**Writing**
+- Grid editor: tap/click to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. A note you drag or stretch overwrites the notes it lands on.
+- Techniques per note: ghost note (×), slide into the next note, hammer-on / pull-off into the next note. Shown on the grid, heard in playback, written in notation and tab.
+- Quantize 1/4 to 1/16 triplets, 1–8 bars, any time signature from 2/2 to 12/8.
+- 4, 5 or 6 strings, each open string retunable. Fingering stays in low positions automatically.
+- Chord lane with chord-tone tinting, chord picker, "fits better" hints and next-chord suggestions.
+
+**Playing**
+- Loop, metronome, count-in, live BPM, tap tempo, bass and click volume sliders, bass mute.
+
+**Grooves**
+- Bank: 16 pads saved in your browser. Tap a pad to play it on loop. Tap another while it plays and it switches on the next loop. Empty pads save the current groove.
+- Presets: 12 starter grooves, two each for Funk, Motown/Soul, Rock, Reggae, Jazz walking and Latin. Load and play, or add to the bank.
+- Templates: 12 genre rhythm patterns that play over the chords you've set.
+- Share links carry the whole groove in the URL.
+
+**Desktop shortcuts**: Space play/stop · arrows move the selected note · Delete removes it · G ghost · S slide · H hammer · N normal · 1–9 trigger pads · Ctrl+Z / Ctrl+Shift+Z undo/redo.
 
 ## Deploy to GitHub Pages
 
@@ -43,7 +53,8 @@ js/audio.js         Tone.js synth, metronome, loop
 js/theory.js        chord tones, note labels, key guess, chord suggestions
 js/fingering.js     string/fret assignment
 js/notation.js      ticks → note values → VexFlow staff + tab
-js/share.js         saved grooves and share links
+js/genres.js        genre templates and preset grooves
+js/share.js         bank pads, preferences and share links
 tests/run.mjs       unit tests for the logic
 ```
 

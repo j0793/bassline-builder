@@ -32,12 +32,15 @@ export const beatTicks = s => {
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
 
-const n = (start, dur, midi) => ({ id: uid(), start, dur, midi, string: null });
+const n = (start, dur, midi, art = null) => ({ id: uid(), start, dur, midi, string: null, art });
+
+export const ARTS = ['ghost', 'slide', 'hammer'];
 
 // Starter groove: a 2-bar funk line over Am7 | D9 with chromatic approaches.
 export const demoGroove = () => ({
   version: 1,
   title: 'Am7 to D9 starter',
+  genre: 'funk',
   bpm: 92,
   timeSig: [4, 4],
   bars: 2,
@@ -64,11 +67,22 @@ export const blankGroove = from => ({
   notes: [],
 });
 
+// The note being edited wins: notes that start inside its span are removed.
+// (normalize() then trims any earlier note that runs into it.)
+export function claim(s, id) {
+  const x = s.notes.find(n => n.id === id);
+  if (!x) return;
+  const end = x.start + x.dur;
+  s.notes = s.notes.filter(n => n.id === id || n.start < x.start || n.start >= end);
+}
+
 // Keep the groove valid after any edit: sorted, monophonic, inside the canvas.
 export function normalize(s) {
   const total = totalTicks(s);
+  s.genre ??= 'funk';
   s.notes = s.notes
     .filter(x => x.start >= 0 && x.start < total && x.dur > 0)
+    .map(x => ({ ...x, art: ARTS.includes(x.art) ? x.art : null }))
     .sort((a, b) => a.start - b.start);
   const out = [];
   for (const x of s.notes) {
@@ -137,11 +151,11 @@ export function createStore(initial) {
       state = next;
       emit(meta);
     },
-    replace(next) {
+    replace(next, meta = { kind: 'replace' }) {
       past.push(state);
       future = [];
-      state = normalize(next);
-      emit({ kind: 'replace' });
+      state = normalize(structuredClone(next));
+      emit(meta);
     },
     undo() {
       if (!past.length) return;

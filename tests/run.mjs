@@ -8,7 +8,8 @@ if (process.env.TONAL_BROWSER_BUILD) {
   globalThis.Tonal = await import('tonal');
 }
 
-const { demoGroove, normalize, changeTimeSig, totalTicks } = await import('../js/state.js');
+const { demoGroove, normalize, changeTimeSig, totalTicks, claim } = await import('../js/state.js');
+const { TEMPLATES, presets, buildPreset, applyTemplate } = await import('../js/genres.js');
 const { analyze, noteFunction, chordInfo, keyInfo, suggestNext, guessKey } = await import('../js/theory.js');
 const { assignFingering } = await import('../js/fingering.js');
 const { buildBars } = await import('../js/notation.js');
@@ -125,6 +126,65 @@ test('next chord suggestions in A minor after Am7 include Dm7', () => {
 
 test('key guess finds A minor for the demo', () => {
   assert.deepEqual(guessKey(normalize(demoGroove()).notes), { tonic: 'A', mode: 'minor' });
+});
+
+test('an extended note overwrites the notes it now covers', () => {
+  const s = base({ notes: [note(0, 3, 33, 'a'), note(3, 3, 36, 'b'), note(6, 3, 38, 'c'), note(12, 3, 40, 'd')] });
+  s.notes.find(n => n.id === 'a').dur = 9;
+  claim(s, 'a');
+  normalize(s);
+  assert.deepEqual(s.notes.map(n => [n.id, n.dur]), [['a', 9], ['d', 3]]);
+});
+
+test('a moved note keeps its length and trims the note before it', () => {
+  const s = base({ notes: [note(0, 12, 33, 'a'), note(24, 6, 36, 'b')] });
+  s.notes.find(n => n.id === 'b').start = 6;
+  claim(s, 'b');
+  normalize(s);
+  assert.deepEqual(s.notes.map(n => [n.id, n.start, n.dur]), [['a', 0, 6], ['b', 6, 6]]);
+});
+
+test('normalize keeps valid articulations and drops unknown ones', () => {
+  const s = base({ notes: [{ ...note(0, 3, 33), art: 'slide' }, { ...note(3, 3, 35), art: 'wobble' }] });
+  assert.deepEqual(s.notes.map(n => n.art), ['slide', null]);
+});
+
+test('every preset builds, fits the bars, and renders whole bars', () => {
+  for (const p of presets()) {
+    const s = buildPreset(p);
+    assert.ok(s.notes.length > 0, p.title);
+    assert.equal(s.bars, p.chords.length);
+    buildBars(s).bars.forEach(b => assert.equal(sumTicks(b), 48, p.title));
+    const a = analyze(s);
+    s.notes.forEach(n => assert.ok(a.notes[n.id].string != null, `${p.title}: unplayable ${n.midi}`));
+  }
+  assert.equal(new Set(presets().map(p => p.genre)).size, 6);
+});
+
+test('ghost steps become ghost notes', () => {
+  const s = buildPreset(presets().find(p => p.template === 'funk-pocket'));
+  assert.ok(s.notes.some(n => n.art === 'ghost'));
+});
+
+test('the walking approach note is a half step from the next root', () => {
+  const s = buildPreset(presets().find(p => p.template === 'jazz-walk')); // Cm7 F7 Bbmaj7 Bbmaj7
+  const beat4 = s.notes.find(n => n.start === 36); // last beat of bar 1, into F7
+  assert.equal(Math.abs((beat4.midi % 12) - 5), 1);
+});
+
+test('templates switch a 3/4 groove to 4/4', () => {
+  const s = base({ notes: [] });
+  changeTimeSig(s, [3, 4]);
+  normalize(s);
+  const { changedMeter } = applyTemplate(s, TEMPLATES[0]);
+  assert.equal(changedMeter, true);
+  assert.deepEqual(s.timeSig, [4, 4]);
+});
+
+test('the tumbao anticipates the next chord on beat four', () => {
+  const s = buildPreset(presets().find(p => p.template === 'latin-tumbao')); // Am E7 Am E7
+  const n = s.notes.find(x => x.start === 36);
+  assert.equal(n.midi % 12, 4); // E
 });
 
 console.log(`${passed} tests passed`);
