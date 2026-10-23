@@ -162,9 +162,13 @@ export function analyze(s) {
   });
 
   // Approach notes: a non-chord tone one or two semitones from the root it lands on at a chord change.
-  s.notes.forEach((x, i) => {
-    const wraps = i === s.notes.length - 1;
-    const next = wraps ? s.notes[0] : s.notes[i + 1];
+  s.notes.forEach(x => {
+    // The next note to start after this one (with chords, the closest in pitch); wrap at the loop end.
+    const later = s.notes.filter(y => y.start > x.start);
+    const firstStart = later.length ? Math.min(...later.map(y => y.start)) : 0;
+    const pool = later.length ? later.filter(y => y.start === firstStart) : s.notes.filter(y => y.start === s.notes[0].start);
+    const next = pool.reduce((m, y) => (!m || Math.abs(y.midi - x.midi) < Math.abs(m.midi - x.midi) ? y : m), null);
+    const wraps = !later.length;
     if (!next || next === x) return;
     const end = x.start + x.dur;
     const gap = wraps ? total - end + next.start : next.start - end;

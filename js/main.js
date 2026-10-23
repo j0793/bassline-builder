@@ -1,4 +1,4 @@
-import { createStore, emptyGroove, barTicks, beatTicks, uid } from './state.js';
+import { createStore, emptyGroove, barTicks, beatTicks, uid, nextOf } from './state.js';
 import { analyze, midiName, prettyNote, pretty, spanAt, KEY_TONICS } from './theory.js';
 import { createGrid } from './grid.js';
 import { renderNotation, highlightNotation } from './notation.js';
@@ -7,17 +7,20 @@ import { TEMPLATES, presets, buildPreset, applyTemplate, genreName, allGenres, g
 import { coach, romanFor, inKey } from './coach.js';
 import * as audio from './audio.js';
 import * as share from './share.js';
+import { midiFile, fileName, download } from './export.js';
 
 const $ = sel => document.querySelector(sel);
 const esc = str => String(str).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 const prefs = share.loadPrefs();
-['loop', 'metronome', 'countIn', 'countBeats', 'bassOn', 'bassVol', 'clickVol'].forEach(k => {
+const PREF_KEYS = ['loop', 'metronome', 'countIn', 'countBeats', 'bassOn', 'chordsOn', 'bassVol', 'clickVol', 'chordsVol'];
+PREF_KEYS.forEach(k => {
   if (prefs[k] != null) audio.opts[k] = prefs[k];
 });
+if (prefs.trainer) audio.opts.trainer = { ...audio.opts.trainer, ...prefs.trainer, on: false };
 const savePrefs = () => {
-  const { loop, metronome, countIn, countBeats, bassOn, bassVol, clickVol } = audio.opts;
-  share.savePrefs({ loop, metronome, countIn, countBeats, bassOn, bassVol, clickVol, activePad: ui.activePad });
+  const out = Object.fromEntries(PREF_KEYS.map(k => [k, audio.opts[k]]));
+  share.savePrefs({ ...out, trainer: audio.opts.trainer, activePad: ui.activePad });
 };
 
 const ui = {
@@ -112,7 +115,7 @@ function setArt(id, art) {
   const s = store.get();
   const i = s.notes.findIndex(x => x.id === id);
   if (i < 0) return;
-  if ((art === 'slide' || art === 'hammer') && !s.notes[i + 1]) {
+  if ((art === 'slide' || art === 'hammer') && !nextOf(s.notes, s.notes[i])) {
     return toast('Slides and hammer-ons connect to the next note. Add a note after this one first.');
   }
   store.update(t => {
@@ -136,7 +139,7 @@ function renderNoteDetail() {
     return;
   }
   const info = a.notes[n.id];
-  const next = s.notes[i + 1];
+  const next = n ? nextOf(s.notes, n) : null;
   const where = `bar ${Math.floor(n.start / bar) + 1}, beat ${(((n.start % bar) / beat) + 1).toFixed(2).replace(/\.?0+$/, '')}`;
   const string = info.string != null ? `${prettyNote(s.tuning[info.string].replace(/-?\d+$/, ''))} string, ${info.fret === 0 ? 'open' : `fret ${info.fret}`}` : 'out of range for this tuning';
   const role = info.approach
@@ -293,13 +296,19 @@ function renderTransport() {
   $('#loop').setAttribute('aria-pressed', audio.opts.loop);
   $('#metro').setAttribute('aria-pressed', audio.opts.metronome);
   $('#countin').setAttribute('aria-pressed', audio.opts.countIn);
-  $('#count-beats').value = audio.opts.countBeats;
+  const bar = $('#count-beats').querySelector('[value="bar"]');
+  bar.textContent = `Bar (${store.get().timeSig[0]})`;
+  $('#count-beats').value = String(audio.opts.countBeats);
   $('#count-beats').disabled = !audio.opts.countIn;
   $('#bass').setAttribute('aria-pressed', audio.opts.bassOn);
   $('#vol-bass').value = audio.opts.bassVol;
   $('#vol-click').value = audio.opts.clickVol;
   $('#vol-bass-out').textContent = audio.opts.bassVol;
   $('#vol-click-out').textContent = audio.opts.clickVol;
+  $('#chords').setAttribute('aria-pressed', audio.opts.chordsOn);
+  $('#vol-chords').value = audio.opts.chordsVol;
+  $('#vol-chords-out').textContent = audio.opts.chordsVol;
+  if (audio.opts.trainer.on && audio.trainerBpm() != null) $('#bpm').value = audio.trainerBpm();
 }
 
 function setPlaying(on) {
@@ -343,7 +352,7 @@ function follow() {
   if (t == null) return requestAnimationFrame(follow);
   grid.setPlayhead(t);
   highlightNotation(t < 0 ? null : t);
-  showCountdown(t < 0 ? Math.ceil(-t / beatTicks(store.get())) : null);
+  showCountdown(t < 0 ? Math.ceil(-t / audio.countIn(store.get()).step) : null);
   const sp = t < 0 ? null : spanAt(analysis.spans, t);
   if (sp && sp.index !== lastSpan) {
     lastSpan = sp.index;
@@ -352,7 +361,7 @@ function follow() {
   requestAnimationFrame(follow);
 }
 
-const toggles = { loop: 'loop', metro: 'metronome', countin: 'countIn', bass: 'bassOn' };
+const toggles = { loop: 'loop', metro: 'metronome', countin: 'countIn', bass: 'bassOn', chords: 'chordsOn' };
 Object.entries(toggles).forEach(([id, key]) =>
   $(`#${id}`).addEventListener('click', () => {
     audio.opts[key] = !audio.opts[key];
@@ -364,11 +373,11 @@ Object.entries(toggles).forEach(([id, key]) =>
 );
 
 $('#count-beats').addEventListener('change', e => {
-  audio.opts.countBeats = Number(e.target.value);
+  audio.opts.countBeats = e.target.value === 'bar' ? 'bar' : Number(e.target.value);
   savePrefs();
 });
 
-[['vol-bass', 'bassVol'], ['vol-click', 'clickVol']].forEach(([id, key]) => {
+[['vol-bass', 'bassVol'], ['vol-click', 'clickVol'], ['vol-chords', 'chordsVol']].forEach(([id, key]) => {
   $(`#${id}`).addEventListener('input', e => {
     audio.opts[key] = Number(e.target.value);
     $(`#${id}-out`).textContent = audio.opts[key];
@@ -817,6 +826,7 @@ function renderAll({ notation = true } = {}) {
   renderTransport();
   renderTeach();
   renderStart();
+  renderPractice();
   renderNowChord();
   chordSheet.refresh();
   if (notation) drawNotation();
@@ -848,8 +858,114 @@ new ResizeObserver(([e]) => {
 }).observe($('#notation'));
 
 
+// ----- Practice: loop a bar range, tempo trainer -----
+function renderPractice() {
+  const s = store.get();
+  const r = audio.opts.range;
+  // Only rebuild the bar lists when the bar count changes; never inside their own change event.
+  ['#range-from', '#range-to'].forEach(id => {
+    const el = $(id);
+    if (el.options.length !== s.bars) {
+      el.innerHTML = Array.from({ length: s.bars }, (_, i) => `<option value="${i}">${i + 1}</option>`).join('');
+    }
+  });
+  $('#range-from').value = String(r ? Math.min(r.from, s.bars - 1) : 0);
+  $('#range-to').value = String(r ? Math.min(r.to, s.bars - 1) : s.bars - 1);
+  $('#range-all').disabled = !r;
+  const tr = audio.opts.trainer;
+  $('#trainer').setAttribute('aria-pressed', tr.on);
+  $('#tr-from').value = tr.from;
+  $('#tr-step').value = tr.step;
+  $('#tr-every').value = tr.every;
+  $('#tr-target').value = tr.target;
+  const now = audio.trainerBpm();
+  $('#trainer-status').textContent = tr.on
+    ? now != null
+      ? `Playing at ${now} BPM${now >= tr.target ? ', target reached' : `, heading for ${tr.target}`}.`
+      : `Starts at ${tr.from} BPM and adds ${tr.step} every ${tr.every === 1 ? 'loop' : `${tr.every} loops`} up to ${tr.target}.`
+    : 'Off. Turn it on to build speed gradually.';
+  ui.range = r;
+}
+
+function restartIfPlaying() {
+  if (!audio.isPlaying()) return;
+  audio.stop();
+  startPlayback();
+}
+
+function setRange() {
+  const s = store.get();
+  let from = Number($('#range-from').value);
+  let to = Number($('#range-to').value);
+  if (to < from) [from, to] = [to, from];
+  audio.opts.range = from === 0 && to === s.bars - 1 ? null : { from, to };
+  renderPractice();
+  grid.render(s, analysis);
+  restartIfPlaying();
+}
+$('#range-from').addEventListener('change', setRange);
+$('#range-to').addEventListener('change', setRange);
+$('#range-all').addEventListener('click', () => {
+  audio.opts.range = null;
+  renderPractice();
+  grid.render(store.get(), analysis);
+  restartIfPlaying();
+});
+
+$('#trainer').addEventListener('click', () => {
+  const tr = audio.opts.trainer;
+  tr.on = !tr.on;
+  if (tr.on && !prefs.trainer) {
+    // First use: start 20 below the groove's tempo and climb to it.
+    const bpm = store.get().bpm;
+    Object.assign(tr, { from: Math.max(40, bpm - 20), target: bpm });
+  }
+  savePrefs();
+  renderPractice();
+  if (!tr.on) audio.setBpm(store.get().bpm);
+  restartIfPlaying();
+});
+[['tr-from', 'from', 40, 240], ['tr-step', 'step', 1, 20], ['tr-every', 'every', 1, 16], ['tr-target', 'target', 40, 260]].forEach(([id, key, lo, hi]) =>
+  $(`#${id}`).addEventListener('change', e => {
+    audio.opts.trainer[key] = Math.max(lo, Math.min(hi, Math.round(Number(e.target.value)) || lo));
+    savePrefs();
+    renderPractice();
+  })
+);
+audio.hooks.onTempo = bpm => {
+  $('#bpm').value = bpm;
+  renderPractice();
+};
+audio.hooks.onSamples = ok => {
+  $('#sample-status').textContent = ok ? '' : 'The bass samples did not load, so a basic synth is playing instead.';
+};
+
+// ----- Export -----
+$('#export-midi').addEventListener('click', () => {
+  const s = store.get();
+  download(new Blob([midiFile(s, { chords: true })], { type: 'audio/midi' }), fileName(s, 'mid'));
+  toast(`Downloading ${fileName(s, 'mid')}: bass on track 1, chords on track 2.`);
+});
+$('#export-png').addEventListener('click', () => {
+  const s = store.get();
+  const canvas = document.createElement('canvas');
+  try {
+    renderNotation($('#notation'), s, analysis, { loop: audio.opts.loop, canvas, width: 1100 });
+  } catch (err) {
+    console.error(err);
+    return toast('Could not draw the image. Try again after the notation finishes loading.');
+  }
+  canvas.toBlob(blob => {
+    if (!blob) return toast('Could not create the image.');
+    download(blob, fileName(s, 'png'));
+    toast(`Downloading ${fileName(s, 'png')}.`);
+  }, 'image/png');
+});
+
+renderPractice();
 renderAll();
 renderPads();
 renderGroovesPanes();
 grid.scrollToContent(store.get(), analysis);
 if (startMessage) toast(startMessage);
+audio.preload();

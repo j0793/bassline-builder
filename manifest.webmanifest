@@ -1,0 +1,16 @@
+{
+  "name": "Bassline Builder",
+  "short_name": "Basslines",
+  "description": "Write a bassline on a grid, loop it with a metronome, and read it as notation and tab.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef2f0",
+  "theme_color": "#23826f",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

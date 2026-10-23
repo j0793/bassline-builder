@@ -15,7 +15,7 @@ Works on desktop (mouse + keyboard) and phones (touch). Every action has a butto
 - Nothing plays on its own: press Play (or Space), or tap the active pad.
 
 **Writing**
-- Grid editor: tap/click to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. A note you drag or stretch overwrites the notes it lands on.
+- Grid editor: tap/click to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. Notes can overlap: stack them into chords and double stops, hold one under a moving line, or run into a chord. Notation shows stacked notes and ties; tab gives each one its own string.
 - Techniques per note: ghost note (×), slide into the next note, hammer-on / pull-off into the next note. Shown on the grid, heard in playback, written in notation and tab.
 - Grid of 1/4, 1/8 or 1/16, each with a Triplet switch. 1–8 bars, any time signature from 2/2 to 12/8.
 - 4, 5 or 6 strings, each open string retunable. Fingering stays in low positions automatically.
@@ -26,7 +26,17 @@ Works on desktop (mouse + keyboard) and phones (touch). Every action has a butto
 - Shows the progression in Roman numerals and flags chords that use notes outside the key.
 
 **Playing**
-- Loop, metronome, count-in of 1–8 beats with an on-screen countdown, live BPM, tap tempo, bass and click volume sliders, bass mute.
+- Sampled electric bass (real recordings, pitch-shifted, so slides glide and chords ring). Chords backing track on an electric-piano sound.
+- Loop, metronome, count-in with an on-screen countdown (one bar in the current time signature by default, or a fixed 1–8 beats), live BPM, tap tempo, bass, chords and click volume sliders, bass mute.
+
+**Practice**
+- Loop any range of bars; the rest of the grid dims.
+- Tempo trainer: start slow and add a few BPM every N loops up to a target.
+- Mute the bass and turn on Chords to play the line yourself over the changes.
+
+**Export and offline**
+- Save the notation and tab as a PNG, or export a MIDI file (bass on track 1, chords on track 2) for your DAW.
+- Installable from the browser (Add to Home Screen) and works offline after the first visit.
 
 **Grooves**
 - Bank: 16 pads saved in your browser. Tap a pad to load it, tap it again to play it on loop. Tap another while one plays and it switches on the next loop. Empty pads save the current groove.
@@ -43,6 +53,8 @@ Works on desktop (mouse + keyboard) and phones (touch). Every action has a butto
 3. After about a minute the site is live at `https://<your-username>.github.io/bassline-builder/`.
 
 Every push to `main` redeploys. There is no build, so no Actions workflow is needed.
+
+When you deploy changes, bump `VERSION` at the top of `sw.js` so installed copies pick up the new files.
 
 ## On your phone
 
@@ -66,6 +78,10 @@ js/notation.js      ticks → note values → VexFlow staff + tab
 js/genres.js        genres, templates, starters and Generate
 js/coach.js         teaching panel suggestions and Roman numerals
 js/share.js         bank pads, preferences and share links
+js/export.js        MIDI file writer and image download
+sw.js               offline cache (service worker)
+manifest.webmanifest, icons/   install as an app
+samples/bass/       electric bass samples (see CREDITS.txt)
 tests/run.mjs       unit tests for the logic
 ```
 
@@ -81,3 +97,7 @@ npm test
 ## Libraries
 
 Loaded from jsDelivr, pinned: Tone.js 15.0.4 (audio), VexFlow 5.0.0 (notation), Tonal 6.4.2 (theory), lz-string 1.5.0 (share links).
+
+## Credits
+
+Electric bass samples by Karoryfer, distributed via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments) under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Trimmed and re-encoded for size.

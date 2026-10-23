@@ -7,6 +7,11 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Write a bassline on a grid, hear it loop with a metronome, and read it as notation and tab.">
 <meta name="theme-color" content="#eef2f0">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Basslines">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -16,6 +21,12 @@
 <script src="https://cdn.jsdelivr.net/npm/tonal@6.4.2/browser/tonal.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 <script type="module" src="js/main.js"></script>
+<script>
+  // Offline support, registered on its own so it works even if a library fails to load.
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
 </head>
 <body>
 <header class="transport">
@@ -38,15 +49,18 @@
         <span class="countin-group">
           <button id="countin" type="button" class="toggle" aria-pressed="false">Count-in</button>
           <label class="sr" for="count-beats">Count-in beats</label>
-          <select id="count-beats" title="Beats counted before playback">
+          <select id="count-beats" title="Beats counted before playback. Bar follows the time signature.">
+            <option value="bar">Bar</option>
             <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
             <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
           </select>
         </span>
-        <button id="bass" type="button" class="toggle" aria-pressed="true">Bass</button>
+        <button id="bass" type="button" class="toggle" aria-pressed="true" title="Mute the bass to play the line yourself">Bass</button>
+        <button id="chords" type="button" class="toggle" aria-pressed="false" title="Play the chords as a backing track">Chords</button>
       </div>
       <div class="mix" role="group" aria-label="Volume">
         <label class="vol"><span>Bass</span><input id="vol-bass" type="range" min="0" max="100" step="1"><output id="vol-bass-out"></output></label>
+        <label class="vol"><span>Chords</span><input id="vol-chords" type="range" min="0" max="100" step="1"><output id="vol-chords-out"></output></label>
         <label class="vol"><span>Click</span><input id="vol-click" type="range" min="0" max="100" step="1"><output id="vol-click-out"></output></label>
       </div>
       <div class="history" role="group" aria-label="History">
@@ -82,6 +96,33 @@
     <div id="grid-scroll" class="grid-scroll"></div>
   </section>
 
+  <details class="panel practice" id="practice">
+    <summary>Practice</summary>
+    <div class="practice-body">
+      <div class="field-group">
+        <span class="label" id="range-label">Loop bars</span>
+        <div class="row" role="group" aria-labelledby="range-label">
+          <label class="sr" for="range-from">From bar</label><select id="range-from"></select>
+          <span class="slash">to</span>
+          <label class="sr" for="range-to">To bar</label><select id="range-to"></select>
+          <button type="button" id="range-all" class="ghost">All bars</button>
+        </div>
+      </div>
+      <div class="field-group">
+        <span class="label" id="trainer-label">Tempo trainer</span>
+        <div class="row wrap" role="group" aria-labelledby="trainer-label">
+          <button type="button" id="trainer" class="toggle" aria-pressed="false">Trainer</button>
+          <label class="mini">from <input id="tr-from" type="number" inputmode="numeric" min="40" max="240"></label>
+          <label class="mini">+ <input id="tr-step" type="number" inputmode="numeric" min="1" max="20"> BPM</label>
+          <label class="mini">every <input id="tr-every" type="number" inputmode="numeric" min="1" max="16"> loops</label>
+          <label class="mini">up to <input id="tr-target" type="number" inputmode="numeric" min="40" max="260"></label>
+        </div>
+        <p id="trainer-status" class="sub trainer-status"></p>
+      </div>
+      <p class="sub">Mute <b>Bass</b> and turn on <b>Chords</b> to play the line yourself over the click and the changes. <span id="sample-status"></span></p>
+    </div>
+  </details>
+
   <section class="panel teach" aria-labelledby="teach-h">
     <h2 id="teach-h">Teaching panel</h2>
     <div id="note-detail"></div>
@@ -95,7 +136,13 @@
   </section>
 
   <section class="panel sheet-music" aria-labelledby="sheet-h">
-    <h2 id="sheet-h">Notation and tab</h2>
+    <div class="sheet-head">
+      <h2 id="sheet-h">Notation and tab</h2>
+      <div class="row-btns">
+        <button type="button" id="export-png" class="ghost" title="Save the notation and tab as an image">Save image</button>
+        <button type="button" id="export-midi" class="ghost" title="Download a MIDI file for your DAW">Export MIDI</button>
+      </div>
+    </div>
     <p class="sub">Bass sounds an octave lower than written. Tab numbers are frets, top line is your highest string.</p>
     <div id="notation" class="notation"></div>
     <p id="notation-note" class="sub warn" hidden>Some rhythms mix straight and triplet steps in one beat, so they're shown approximately.</p>
@@ -128,6 +175,7 @@
     </div>
     <input id="share-out" class="share-out" type="text" readonly hidden aria-label="Share link">
   </section>
+  <p class="credits">Bass samples by Karoryfer via tonejs-instruments, CC BY 3.0.</p>
 </main>
 
 <div id="chord-sheet" class="sheet-backdrop" hidden>

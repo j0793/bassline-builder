@@ -85,33 +85,39 @@ export const blankGroove = from => ({
   notes: [],
 });
 
-// The note being edited wins: notes that start inside its span are removed.
-// (normalize() then trims any earlier note that runs into it.)
+// Notes may overlap freely (runs into chords, double stops, held notes under moving lines).
+// The only thing removed is an exact duplicate: another note with the same start and pitch.
 export function claim(s, id) {
   const x = s.notes.find(n => n.id === id);
   if (!x) return;
-  const end = x.start + x.dur;
-  s.notes = s.notes.filter(n => n.id === id || n.start < x.start || n.start >= end);
+  s.notes = s.notes.filter(n => n.id === id || n.start !== x.start || n.midi !== x.midi);
 }
 
-// Keep the groove valid after any edit: sorted, monophonic, inside the canvas.
+// The note a slide or hammer-on connects to: one starting right as this ends (closest in pitch),
+// otherwise the next note to start.
+export function nextOf(notes, n) {
+  const end = n.start + n.dur;
+  const at = notes.filter(x => x !== n && x.start === end);
+  if (at.length) return at.reduce((a, b) => (Math.abs(b.midi - n.midi) < Math.abs(a.midi - n.midi) ? b : a));
+  return notes.filter(x => x !== n && x.start > n.start).sort((a, b) => a.start - b.start || Math.abs(a.midi - n.midi) - Math.abs(b.midi - n.midi))[0] ?? null;
+}
+
+// Keep the groove valid after any edit: sorted, no exact duplicates, inside the canvas.
 export function normalize(s) {
   const total = totalTicks(s);
   s.genre ??= 'funk';
   s.notes = s.notes
     .filter(x => x.start >= 0 && x.start < total && x.dur > 0)
     .map(x => ({ ...x, art: ARTS.includes(x.art) ? x.art : null }))
-    .sort((a, b) => a.start - b.start);
-  const out = [];
-  for (const x of s.notes) {
-    if (out.length && out.at(-1).start === x.start) continue; // first one wins
-    out.push(x);
-  }
-  out.forEach((x, i) => {
-    const limit = out[i + 1]?.start ?? total;
-    x.dur = Math.min(x.dur, limit - x.start);
+    .sort((a, b) => a.start - b.start || a.midi - b.midi);
+  const seen = new Set();
+  s.notes = s.notes.filter(x => {
+    const k = `${x.start}:${x.midi}`;
+    if (seen.has(k)) return false; // first one wins
+    seen.add(k);
+    return true;
   });
-  s.notes = out;
+  s.notes.forEach(x => (x.dur = Math.min(x.dur, total - x.start)));
 
   s.chords = s.chords.filter(c => c.start >= 0 && c.start < total).sort((a, b) => a.start - b.start);
   s.chords = s.chords.filter((c, i, arr) => i === 0 || c.start !== arr[i - 1].start);

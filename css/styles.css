@@ -183,6 +183,7 @@ select, input[type="text"], input[type="number"] {
 }
 .play[aria-pressed="true"] i { width: 11px; height: 11px; border: 0; background: currentColor; border-radius: 2px; }
 .bpm, .toggles, .history { display: flex; align-items: center; gap: 4px; }
+.toggles { flex-wrap: wrap; }
 .bpm button { width: 36px; padding: 0; }
 .bpm #tap { width: auto; padding: 0 10px; }
 .bpm-field { position: relative; display: block; }
@@ -750,7 +751,7 @@ kbd {
   main > * { grid-column: 1; }
   main > .grooves {
     grid-column: 2;
-    grid-row: 1 / span 6;
+    grid-row: 1 / span 9;
     position: sticky;
     top: calc(env(safe-area-inset-top, 0px) + 84px);
     max-height: calc(100vh - 100px);
@@ -883,3 +884,15 @@ kbd {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
+
+/* ---------- Practice ---------- */
+.practice-body { display: grid; gap: 14px; }
+.practice-body .field-group { gap: 6px; }
+.mini { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+.mini input { width: 64px; text-align: center; font-family: var(--font-mono); }
+.trainer-status { margin: 4px 0 0; }
+.out-range { position: absolute; top: 0; bottom: 0; z-index: 3; background: var(--bg); opacity: 0.7; pointer-events: none; }
+.sheet-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.sheet-head h2 { margin: 0; }
+.credits { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+@media (min-width: 1180px) { .credits { grid-column: 1; } }

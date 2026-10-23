@@ -1,6 +1,6 @@
 // Grid ticks -> readable note values -> VexFlow bass clef + tab.
 // buildBars() is pure (and tested); renderNotation() draws with the global VexFlow.
-import { barTicks, beatTicks, isCompound } from './state.js';
+import { barTicks, beatTicks, isCompound, nextOf } from './state.js';
 import { midiName, pretty } from './theory.js';
 
 const STRAIGHT = { 48: 'w', 36: 'hd', 24: 'h', 18: 'qd', 12: 'q', 9: '8d', 6: '8', 3: '16' };
@@ -31,18 +31,20 @@ export function buildBars(s) {
     const b0 = b * bar;
     const b1 = b0 + bar;
 
-    // Note and rest events covering the bar.
+    // Slice the bar wherever any note starts or stops. Each slice is a rest or a chord of
+    // whatever is sounding; a note that spans several slices is tied across them.
+    const inBar = s.notes.filter(n => n.start < b1 && n.start + n.dur > b0);
+    const cuts = new Set([b0, b1]);
+    inBar.forEach(n => [n.start, n.start + n.dur].forEach(t => t > b0 && t < b1 && cuts.add(t)));
+    const points = [...cuts].sort((x, y) => x - y);
     const events = [];
-    let cursor = b0;
-    for (const n of s.notes) {
-      const ns = Math.max(n.start, b0);
-      const ne = Math.min(n.start + n.dur, b1);
-      if (ne <= ns) continue;
-      if (ns > cursor) events.push({ start: cursor, end: ns, rest: true });
-      events.push({ start: ns, end: ne, note: n, continued: n.start < b0, continues: n.start + n.dur > b1 });
-      cursor = ne;
+    for (let i = 0; i < points.length - 1; i++) {
+      const [st, en] = [points[i], points[i + 1]];
+      const sounding = inBar.filter(n => n.start < en && n.start + n.dur > st).sort((x, y) => x.midi - y.midi);
+      const prev = events.at(-1);
+      if (!sounding.length && prev?.rest) prev.end = en; // join neighbouring rests
+      else events.push(sounding.length ? { start: st, end: en, notes: sounding } : { start: st, end: en, rest: true });
     }
-    if (cursor < b1) events.push({ start: cursor, end: b1, rest: true });
 
     const chordStarts = s.chords.map(c => c.start).filter(t => t > b0 && t < b1);
     const nextChord = t => Math.min(b1, ...chordStarts.filter(c => c > t));
@@ -101,14 +103,23 @@ export function buildBars(s) {
       }
 
       const mine = pieces.slice(startPieceIndex);
-      mine.forEach((p, i) => {
+      mine.forEach(p => {
         p.rest = !!e.rest;
         p.dots = p.vf.endsWith('d') ? 1 : 0;
-        if (e.note) {
-          p.noteId = e.note.id;
-          p.midi = e.note.midi;
-          p.tied = i > 0 || e.continued; // continuation of an earlier piece
-          p.tieToNext = i < mine.length - 1 || e.continues;
+        if (e.notes) {
+          const end = p.start + p.dur;
+          p.notes = e.notes.map(n => ({
+            id: n.id,
+            midi: n.midi,
+            art: n.art ?? null,
+            tied: n.start < p.start, // continues from an earlier piece
+            tieToNext: n.start + n.dur > end,
+          }));
+          // Single-note shorthands.
+          p.noteId = p.notes[0].id;
+          p.midi = p.notes[0].midi;
+          p.tied = p.notes.every(n => n.tied);
+          p.tieToNext = p.notes.some(n => n.tieToNext);
         }
       });
     }
@@ -123,10 +134,13 @@ export function buildBars(s) {
 
 let pieceEls = [];
 
-export function renderNotation(el, s, analysis, { loop = true, selectedId = null } = {}) {
+// Draws into `el` as SVG, or into `canvas` (for image export) when one is given.
+export function renderNotation(el, s, analysis, { loop = true, selectedId = null, canvas = null, width: fixedWidth = null } = {}) {
   const VF = globalThis.VexFlow;
-  el.innerHTML = '';
-  pieceEls = [];
+  if (!canvas) {
+    el.innerHTML = '';
+    pieceEls = [];
+  }
   if (!VF) {
     el.textContent = 'Notation library did not load. Check your connection and reload.';
     return { approx: false };
@@ -134,7 +148,7 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
 
   const { bars, approx } = buildBars(s);
   const strings = s.tuning.length;
-  const width = Math.max(300, el.clientWidth || 600);
+  const width = fixedWidth ?? Math.max(300, el.clientWidth || 600);
   const usable = width - 16;
 
   // Pack bars into lines by how many note values each holds, then share out the spare width.
@@ -155,8 +169,11 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
   if (cur.length) lines.push(cur);
   lines.forEach(line => {
     const sum = line.reduce((a, x) => a + x.w, 0);
-    // A single bar too busy for the screen keeps its natural width and scrolls sideways.
-    const scale = sum > usable ? (line.length === 1 ? 1 : usable / sum) : sum > usable * 0.55 ? usable / sum : 1;
+    // Give every bar room (about 260px), fill the width when that's close, and let a single
+    // bar too busy for the screen keep its natural width and scroll sideways.
+    const wanted = Math.max(sum, line.length * 260);
+    const target = sum > usable ? (line.length === 1 ? sum : usable) : wanted > usable * 0.55 ? usable : wanted;
+    const scale = target / sum;
     let x = 8;
     line.forEach(item => {
       item.x = x;
@@ -168,19 +185,23 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
 
   const tabH = (strings - 1) * 13 + 20;
   const lineH = 170 + tabH;
-  const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
+  const renderer = new VF.Renderer(canvas ?? el, canvas ? VF.Renderer.Backends.CANVAS : VF.Renderer.Backends.SVG);
   renderer.resize(canvasW, lines.length * lineH + 10);
   const ctx = renderer.getContext();
-  ctx.setFillStyle('currentColor');
-  ctx.setStrokeStyle('currentColor');
+  if (canvas) {
+    ctx.save();
+    ctx.setFillStyle('#ffffff');
+    ctx.fillRect(0, 0, canvasW, lines.length * lineH + 10);
+    ctx.restore();
+  }
+  ctx.setFillStyle(canvas ? '#111111' : 'currentColor');
+  ctx.setStrokeStyle(canvas ? '#111111' : 'currentColor');
   const layout = new Map();
   lines.forEach((line, li) => line.forEach((item, ci) => layout.set(item.bar.index, { x: item.x, w: item.w, line: li, col: ci })));
 
   const ties = [];
-  const noteById = new Map(s.notes.map(n => [n.id, n]));
-  const heads = new Map(); // first drawn piece of each note
-  const tails = new Map(); // last drawn piece of each note
-  let prevLast = null; // last staff note of the previous bar, for ties across bars
+  const heads = new Map(); // noteId -> first drawn piece { sn, idx, tn, tidx, line }
+  const tails = new Map(); // noteId -> latest drawn piece { sn, idx, line }
 
   bars.forEach((bar, bi) => {
     const { x, w: barW, line, col } = layout.get(bi);
@@ -211,33 +232,43 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
     const tripletGroups = new Map();
 
     bar.pieces.forEach(p => {
+      const duration = p.vf.replace('d', '');
       let sn;
       let tn;
       if (p.rest) {
-        sn = new VF.StaveNote({ keys: ['d/3'], duration: p.vf.replace('d', '') + 'r', clef: 'bass', dots: p.dots });
-        tn = new VF.GhostNote({ duration: p.vf.replace('d', ''), dots: p.dots });
+        sn = new VF.StaveNote({ keys: ['d/3'], duration: duration + 'r', clef: 'bass', dots: p.dots });
+        tn = new VF.GhostNote({ duration, dots: p.dots });
       } else {
-        const name = midiName(p.midi + 12, analysis.flats); // bass is written an octave up
-        const [, letter, acc, oct] = name.match(/^([A-G])([#b]?)(-?\d+)$/);
-        const isGhost = noteById.get(p.noteId)?.art === 'ghost';
-        sn = new VF.StaveNote({
-          keys: [`${letter.toLowerCase()}${acc}/${oct}${isGhost ? '/x2' : ''}`],
-          duration: p.vf.replace('d', ''),
-          dots: p.dots,
-          clef: 'bass',
-          autoStem: true,
+        // One key per sounding note, low to high. Bass is written an octave above where it sounds.
+        const keys = p.notes.map(n => {
+          const [, letter, acc, oct] = midiName(n.midi + 12, analysis.flats).match(/^([A-G])([#b]?)(-?\d+)$/);
+          return `${letter.toLowerCase()}${acc}/${oct}${n.art === 'ghost' ? '/x2' : ''}`;
         });
-        const pos = analysis.notes[p.noteId];
-        if (p.tied || !pos || pos.string == null) {
-          tn = new VF.GhostNote({ duration: p.vf.replace('d', ''), dots: p.dots });
-          if (!p.tied && (!pos || pos.string == null)) tn = new VF.TabNote({ positions: [{ str: 1, fret: '?' }], duration: p.vf.replace('d', ''), dots: p.dots });
-        } else {
+        sn = new VF.StaveNote({ keys, duration, dots: p.dots, clef: 'bass', autoStem: true });
+        // Tab shows only the notes struck here; held notes are implied by the staff ties.
+        const struck = p.notes
+          .map((n, i) => ({ n, i, pos: analysis.notes[n.id] }))
+          .filter(x => !x.n.tied && x.pos && x.pos.string != null);
+        if (struck.length) {
           tn = new VF.TabNote({
-            positions: [{ str: strings - pos.string, fret: isGhost ? 'x' : pos.fret }],
-            duration: p.vf.replace('d', ''),
+            positions: struck.map(x => ({ str: strings - x.pos.string, fret: x.n.art === 'ghost' ? 'x' : x.pos.fret })),
+            duration,
             dots: p.dots,
           });
+        } else {
+          tn = new VF.GhostNote({ duration, dots: p.dots });
         }
+        p.notes.forEach((n, i) => {
+          if (n.tied && tails.has(n.id)) {
+            const t = tails.get(n.id);
+            ties.push({ first: t.sn, firstIdx: t.idx, last: sn, lastIdx: i, sameLine: t.line === line });
+          }
+          if (!heads.has(n.id)) {
+            const tidx = struck.findIndex(x => x.n.id === n.id);
+            heads.set(n.id, { sn, idx: i, tn: tidx >= 0 ? tn : null, tidx, line });
+          }
+          tails.set(n.id, { sn, idx: i, line });
+        });
       }
       if (p.dots) VF.Dot.buildAndAttach([sn], { all: true });
 
@@ -256,20 +287,9 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
         tripletGroups.get(key).tab.push(tn);
       }
 
-      if (!p.rest) {
-        if (p.tied && prevLast) ties.push({ first: prevLast.note, last: sn, sameLine: prevLast.line === line });
-        prevLast = p.tieToNext ? { note: sn, line } : null;
-      } else {
-        prevLast = null;
-      }
-
-      if (!p.rest) {
-        if (!heads.has(p.noteId)) heads.set(p.noteId, { sn, tn, line });
-        tails.set(p.noteId, { sn, line });
-      }
       staffNotes.push(sn);
       tabNotes.push(tn);
-      pieceEls.push({ start: p.start, end: p.start + p.dur, noteId: p.noteId, sn, tn });
+      if (!canvas) pieceEls.push({ start: p.start, end: p.start + p.dur, ids: p.rest ? [] : p.notes.map(n => n.id), sn, tn });
     });
 
     const tuplets = [];
@@ -307,36 +327,37 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
 
   ties.forEach(t => {
     const parts = t.sameLine
-      ? [{ firstNote: t.first, lastNote: t.last }]
-      : [{ firstNote: t.first }, { lastNote: t.last }];
-    parts.forEach(p =>
-      new VF.StaveTie({ ...p, firstIndexes: [0], lastIndexes: [0] }).setContext(ctx).draw()
-    );
+      ? [{ firstNote: t.first, lastNote: t.last, firstIndexes: [t.firstIdx], lastIndexes: [t.lastIdx] }]
+      : [
+          { firstNote: t.first, firstIndexes: [t.firstIdx], lastIndexes: [t.firstIdx] },
+          { lastNote: t.last, firstIndexes: [t.lastIdx], lastIndexes: [t.lastIdx] },
+        ];
+    parts.forEach(p => new VF.StaveTie(p).setContext(ctx).draw());
   });
 
-  // Slides and hammer-ons / pull-offs connect a note to the one after it.
-  s.notes.forEach((n, i) => {
-    const next = s.notes[i + 1];
-    if (!next || (n.art !== 'slide' && n.art !== 'hammer')) return;
+  // Slides and hammer-ons / pull-offs connect a note to the one it leads into.
+  s.notes.forEach(n => {
+    if (n.art !== 'slide' && n.art !== 'hammer') return;
+    const next = nextOf(s.notes, n);
     const a = tails.get(n.id);
     const ah = heads.get(n.id);
-    const b = heads.get(next.id);
+    const b = next && heads.get(next.id);
     if (!a || !b || a.line !== b.line) return;
     const up = next.midi >= n.midi;
-    const idx = { firstIndexes: [0], lastIndexes: [0] };
     try {
+      const staffIdx = { firstIndexes: [a.idx], lastIndexes: [b.idx] };
+      const tabIdx = { firstIndexes: [ah.tidx], lastIndexes: [b.tidx] };
+      const tabOk = ah.tn && b.tn && ah.tidx >= 0 && b.tidx >= 0;
       if (n.art === 'slide') {
-        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...idx }, 'sl.').setContext(ctx).draw();
-        if (ah.tn instanceof VF.TabNote && b.tn instanceof VF.TabNote) {
-          new VF.TabSlide({ firstNote: ah.tn, lastNote: b.tn, ...idx }, up ? VF.TabSlide.SLIDE_UP : VF.TabSlide.SLIDE_DOWN)
-            .setContext(ctx)
-            .draw();
+        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...staffIdx }, 'sl.').setContext(ctx).draw();
+        if (tabOk) {
+          new VF.TabSlide({ firstNote: ah.tn, lastNote: b.tn, ...tabIdx }, up ? VF.TabSlide.SLIDE_UP : VF.TabSlide.SLIDE_DOWN).setContext(ctx).draw();
         }
       } else {
-        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...idx }, up ? 'H' : 'P').setContext(ctx).draw();
-        if (ah.tn instanceof VF.TabNote && b.tn instanceof VF.TabNote) {
+        new VF.StaveTie({ firstNote: a.sn, lastNote: b.sn, ...staffIdx }, up ? 'H' : 'P').setContext(ctx).draw();
+        if (tabOk) {
           const make = up ? VF.TabTie.createHammeron : VF.TabTie.createPulloff;
-          make({ firstNote: ah.tn, lastNote: b.tn, ...idx }).setContext(ctx).draw();
+          make({ firstNote: ah.tn, lastNote: b.tn, ...tabIdx }).setContext(ctx).draw();
         }
       }
     } catch (err) {
@@ -344,10 +365,12 @@ export function renderNotation(el, s, analysis, { loop = true, selectedId = null
     }
   });
 
-  pieceEls.forEach(p => {
-    p.els = [p.sn, p.tn].map(n => n.getSVGElement?.()).filter(Boolean);
-    if (p.noteId && p.noteId === selectedId) p.els.forEach(e => e.classList.add('vf-selected'));
-  });
+  if (!canvas) {
+    pieceEls.forEach(p => {
+      p.els = [p.sn, p.tn].map(n => n.getSVGElement?.()).filter(Boolean);
+      if (selectedId && p.ids.includes(selectedId)) p.els.forEach(e => e.classList.add('vf-selected'));
+    });
+  }
   return { approx };
 }
 
@@ -356,7 +379,7 @@ export function highlightNotation(tick) {
   lit.forEach(e => e.classList.remove('vf-playing'));
   lit = [];
   if (tick == null) return;
-  const p = pieceEls.find(p => p.noteId && tick >= p.start && tick < p.end);
+  const p = pieceEls.find(p => p.ids.length && tick >= p.start && tick < p.end);
   if (p) {
     p.els.forEach(e => e.classList.add('vf-playing'));
     lit = p.els;

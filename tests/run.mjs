@@ -12,6 +12,7 @@ const { demoGroove, normalize, changeTimeSig, totalTicks, claim } = await import
 const { TEMPLATES, presets, buildPreset, applyTemplate, generate, generationPool } = await import('../js/genres.js');
 const { coach, romanFor } = await import('../js/coach.js');
 const { emptyGroove, gridLabel } = await import('../js/state.js');
+const { midiFile } = await import('../js/export.js');
 const { analyze, noteFunction, chordInfo, keyInfo, suggestNext, guessKey } = await import('../js/theory.js');
 const { assignFingering } = await import('../js/fingering.js');
 const { buildBars } = await import('../js/notation.js');
@@ -78,11 +79,6 @@ test('time signature change keeps bar-relative positions', () => {
   assert.deepEqual(s.notes.map(n => n.start), [36]); // beat 4 of bar 1 is gone
 });
 
-test('normalize trims overlaps', () => {
-  const s = base({ notes: [note(0, 24, 33), note(6, 6, 40)] });
-  assert.equal(s.notes[0].dur, 6);
-});
-
 test('note functions', () => {
   const am7 = chordInfo('Am7');
   const scale = keyInfo({ tonic: 'A', mode: 'minor' }).scalePcs;
@@ -128,22 +124,6 @@ test('next chord suggestions in A minor after Am7 include Dm7', () => {
 
 test('key guess finds A minor for the demo', () => {
   assert.deepEqual(guessKey(normalize(demoGroove()).notes), { tonic: 'A', mode: 'minor' });
-});
-
-test('an extended note overwrites the notes it now covers', () => {
-  const s = base({ notes: [note(0, 3, 33, 'a'), note(3, 3, 36, 'b'), note(6, 3, 38, 'c'), note(12, 3, 40, 'd')] });
-  s.notes.find(n => n.id === 'a').dur = 9;
-  claim(s, 'a');
-  normalize(s);
-  assert.deepEqual(s.notes.map(n => [n.id, n.dur]), [['a', 9], ['d', 3]]);
-});
-
-test('a moved note keeps its length and trims the note before it', () => {
-  const s = base({ notes: [note(0, 12, 33, 'a'), note(24, 6, 36, 'b')] });
-  s.notes.find(n => n.id === 'b').start = 6;
-  claim(s, 'b');
-  normalize(s);
-  assert.deepEqual(s.notes.map(n => [n.id, n.start, n.dur]), [['a', 0, 6], ['b', 6, 6]]);
 });
 
 test('normalize keeps valid articulations and drops unknown ones', () => {
@@ -239,6 +219,65 @@ test('quarter-note triplets render as triplets', () => {
   assert.ok(p.every(x => x.triplet));
   assert.equal(sumTicks(buildBars(s).bars[0]), 48);
   assert.equal(gridLabel(8), '1/4 triplet');
+});
+
+test('overlapping notes are kept; only exact duplicates go', () => {
+  const s = base({ notes: [note(0, 24, 33, 'a'), note(6, 6, 40, 'b'), { ...note(6, 3, 40, 'c') }] });
+  assert.deepEqual(s.notes.map(n => [n.id, n.dur]), [['a', 24], ['b', 6]]);
+});
+
+test('extending a note over others leaves them in place', () => {
+  const s = base({ notes: [note(0, 3, 33, 'a'), note(3, 3, 36, 'b'), note(6, 3, 38, 'c')] });
+  s.notes.find(n => n.id === 'a').dur = 9;
+  claim(s, 'a');
+  normalize(s);
+  assert.deepEqual(s.notes.map(n => [n.id, n.dur]), [['a', 9], ['b', 3], ['c', 3]]);
+});
+
+test('a chord renders as one stacked note, and a held note ties under a moving line', () => {
+  const s = base({ notes: [note(0, 12, 33, 'root'), note(0, 6, 40, 'fifth'), note(6, 6, 43, 'seventh')] });
+  const p = buildBars(s).bars[0].pieces.filter(x => !x.rest);
+  assert.equal(p[0].notes.length, 2); // A1 + E2 together
+  assert.equal(p[1].notes.length, 2); // A1 held + G2
+  assert.equal(p[1].notes.find(n => n.id === 'root').tied, true);
+  assert.equal(sumTicks(buildBars(s).bars[0]), 48);
+});
+
+test('chord notes get different strings within a hand span', () => {
+  const opens = [28, 33, 38, 43];
+  const f = assignFingering([note(0, 6, 33, 'r'), note(0, 6, 40, 'f'), note(0, 6, 45, 'o')], opens);
+  const strs = ['r', 'f', 'o'].map(k => f[k].string);
+  assert.equal(new Set(strs).size, 3, JSON.stringify(f));
+  const frets = Object.values(f).map(p => p.fret).filter(x => x > 0);
+  assert.ok(Math.max(...frets) - Math.min(...frets) <= 5);
+});
+
+test('a new note avoids the string of a note still ringing', () => {
+  const opens = [28, 33, 38, 43];
+  const f = assignFingering([note(0, 24, 33, 'held'), note(6, 6, 35, 'run')], opens);
+  assert.notEqual(f.held.string, f.run.string, JSON.stringify(f));
+});
+
+test('MIDI export has a header, three tracks and one note-on per note', () => {
+  const s = normalize(demoGroove());
+  const bytes = midiFile(s);
+  const text = String.fromCharCode(...bytes.slice(0, 4));
+  assert.equal(text, 'MThd');
+  assert.equal((bytes[10] << 8) | bytes[11], 3); // tempo, bass, chords
+  assert.equal((bytes[12] << 8) | bytes[13], 96); // ticks per quarter
+  // Count bass note-ons (status 0x90 with velocity > 0) by walking the bass track.
+  let i = 14;
+  const tracks = [];
+  while (i < bytes.length) {
+    const len = (bytes[i + 4] << 24) | (bytes[i + 5] << 16) | (bytes[i + 6] << 8) | bytes[i + 7];
+    tracks.push(bytes.slice(i + 8, i + 8 + len));
+    i += 8 + len;
+  }
+  assert.equal(tracks.length, 3);
+  const bass = tracks[1];
+  let ons = 0;
+  for (let j = 0; j < bass.length - 2; j++) if (bass[j] === 0x90 && bass[j + 2] > 0) ons++;
+  assert.equal(ons, s.notes.length);
 });
 
 console.log(`${passed} tests passed`);

@@ -1,5 +1,5 @@
 // Piano-roll editor: rows are pitches (high at the top), columns are grid steps.
-import { barTicks, beatTicks, totalTicks, uid, claim } from './state.js';
+import { barTicks, beatTicks, totalTicks, uid, claim, nextOf } from './state.js';
 import { midiName, prettyNote, pretty } from './theory.js';
 
 export const ROW_H = 28;
@@ -113,7 +113,7 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
       const appr = info.approach ? ' approach' : '';
       const art = n.art ? ` art-${n.art}` : '';
       const label = n.art === 'ghost' ? '×' : info.approach ? '→' : info.label;
-      const next = s.notes[i + 1];
+      const next = nextOf(s.notes, n);
       if ((n.art === 'slide' || n.art === 'hammer') && next) {
         const x1 = (n.start + n.dur) * ppt - 2;
         const y1 = rowOf.get(n.midi) * ROW_H + ROW_H / 2;
@@ -133,6 +133,13 @@ export function createGrid(root, { store, ui, onSelect, onChordTap, onPreview })
         <span>${label ?? ''}</span>${sel ? '<i class="handle" aria-hidden="true"></i>' : ''}</div>`;
     });
     f += `<svg class="links" width="${W}" height="${H}" aria-hidden="true">${links}</svg>`;
+    if (ui.range) {
+      // Bars outside the practice loop are dimmed.
+      const from = ui.range.from * bar;
+      const to = Math.min(total, (ui.range.to + 1) * bar);
+      if (from > 0) f += `<div class="out-range" style="left:0;width:${from * ppt}px"></div>`;
+      if (to < total) f += `<div class="out-range" style="left:${to * ppt}px;width:${(total - to) * ppt}px"></div>`;
+    }
     field.innerHTML = f;
     field.appendChild(playhead);
   }

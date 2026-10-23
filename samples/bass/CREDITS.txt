@@ -1,0 +1,4 @@
+Electric bass samples by Karoryfer, distributed via tonejs-instruments
+(https://github.com/nbrosowsky/tonejs-instruments) under CC BY 3.0
+(https://creativecommons.org/licenses/by/3.0/).
+Trimmed to 3.2 s with a fade-out and re-encoded at 96 kbps mono.
