@@ -1,5 +1,5 @@
 import { createStore, emptyGroove, barTicks, beatTicks, uid } from './state.js';
-import { analyze, midiName, prettyNote, pretty, spanAt } from './theory.js';
+import { analyze, midiName, prettyNote, pretty, spanAt, KEY_TONICS } from './theory.js';
 import { createGrid } from './grid.js';
 import { renderNotation, highlightNotation } from './notation.js';
 import { initSettings, initChordSheet } from './controls.js';
@@ -12,12 +12,12 @@ const $ = sel => document.querySelector(sel);
 const esc = str => String(str).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 const prefs = share.loadPrefs();
-['loop', 'metronome', 'countIn', 'bassOn', 'bassVol', 'clickVol'].forEach(k => {
+['loop', 'metronome', 'countIn', 'countBeats', 'bassOn', 'bassVol', 'clickVol'].forEach(k => {
   if (prefs[k] != null) audio.opts[k] = prefs[k];
 });
 const savePrefs = () => {
-  const { loop, metronome, countIn, bassOn, bassVol, clickVol } = audio.opts;
-  share.savePrefs({ loop, metronome, countIn, bassOn, bassVol, clickVol });
+  const { loop, metronome, countIn, countBeats, bassOn, bassVol, clickVol } = audio.opts;
+  share.savePrefs({ loop, metronome, countIn, countBeats, bassOn, bassVol, clickVol, activePad: ui.activePad });
 };
 
 const ui = {
@@ -31,10 +31,37 @@ const ui = {
   confirmClear: false,
 };
 
-// Every visit starts on an open canvas. Last session's groove is one tap away.
+// Opening the app: a shared link wins, then whatever you were working on last,
+// then a random groove from your bank, then a random starter.
 const fromLink = share.fromHash();
 const lastSession = fromLink ? null : share.loadCurrent();
-const store = createStore(fromLink ?? emptyGroove());
+let startMessage = null;
+function initialGroove() {
+  if (fromLink) {
+    startMessage = `Opened shared groove "${fromLink.title}".`;
+    return fromLink;
+  }
+  if (lastSession?.notes?.length) {
+    const pad = prefs.activePad;
+    if (pad != null && share.bank()[pad]) {
+      ui.activePad = pad;
+      ui.dirty = JSON.stringify(share.bank()[pad]) !== JSON.stringify(lastSession);
+    }
+    return lastSession;
+  }
+  const filled = share.bank().map((g, i) => ({ g, i })).filter(x => x.g);
+  if (filled.length) {
+    const pick = filled[Math.floor(Math.random() * filled.length)];
+    ui.activePad = pick.i;
+    startMessage = `Loaded pad ${pick.i + 1}: "${pick.g.title}".`;
+    return pick.g;
+  }
+  const starters = presets();
+  const p = starters[Math.floor(Math.random() * starters.length)];
+  startMessage = `Loaded the starter "${p.title}". Press Play to hear it.`;
+  return buildPreset(p);
+}
+const store = createStore(initialGroove());
 if (fromLink) history.replaceState(null, '', location.pathname);
 Object.assign(ui, { editingGenre: null, confirmGenreDelete: false, renaming: null, confirmExample: null, newGenre: false });
 let analysis = analyze(store.get());
@@ -221,14 +248,26 @@ $('#note-detail').addEventListener('click', e => {
   }
 });
 
-// ----- Start bar: genre, Generate, blank canvas, resume -----
+// ----- Start bar: genre, Generate, blank canvas -----
 function renderStart() {
   const s = store.get();
   const genres = allGenres();
   $('#gen-genre').innerHTML = genres.map(g => `<option value="${g.id}"${g.id === s.genre ? ' selected' : ''}>${esc(g.name)}</option>`).join('');
-  const r = $('#resume');
-  r.hidden = !lastSession?.notes?.length || ui.resumed;
-  if (!r.hidden) r.textContent = `Resume "${lastSession.title}"`;
+}
+
+// One random chord to write over. The key follows it.
+const BLANK_QUALITIES = ['', 'm', '7', 'm7', 'maj7', 'm9', '9'];
+function randomChordCanvas(base) {
+  const tonic = KEY_TONICS[Math.floor(Math.random() * KEY_TONICS.length)];
+  const quality = BLANK_QUALITIES[Math.floor(Math.random() * BLANK_QUALITIES.length)];
+  const minor = quality.startsWith('m') && !quality.startsWith('maj');
+  return {
+    ...emptyGroove(base.tuning),
+    genre: base.genre,
+    bpm: base.bpm,
+    key: { tonic, mode: minor ? 'minor' : 'major' },
+    chords: [{ start: 0, symbol: tonic + quality }],
+  };
 }
 
 $('#gen-genre').addEventListener('change', e => store.update(s => (s.genre = e.target.value)));
@@ -236,18 +275,12 @@ $('#generate').addEventListener('click', () => {
   const s = store.get();
   const g = generate(s.genre, { tuning: s.tuning });
   if (!g) return toast(`No basslines in ${genreName(s.genre)} yet. Save one to it from Grooves → Genres, then Generate.`);
-  ui.resumed = true;
-  load(g, { message: `Generated "${g.title}". Edit it, then save it to a pad or a genre.` });
-  if (!audio.isPlaying()) startPlayback();
+  load(g, { message: audio.isPlaying() ? null : `Generated "${g.title}". Press Play to hear it.` });
 });
 $('#blank').addEventListener('click', () => {
-  const s = store.get();
   if (audio.isPlaying()) audio.stop();
-  load({ ...emptyGroove(s.tuning), genre: s.genre }, { message: 'Open canvas. Undo brings the last groove back.' });
-});
-$('#resume').addEventListener('click', () => {
-  ui.resumed = true;
-  load(lastSession, { message: `Back to "${lastSession.title}".` });
+  const g = randomChordCanvas(store.get());
+  load(g, { message: `Blank canvas over ${pretty(g.chords[0].symbol)}. Undo brings the last groove back.` });
 });
 
 // ----- Transport -----
@@ -260,6 +293,8 @@ function renderTransport() {
   $('#loop').setAttribute('aria-pressed', audio.opts.loop);
   $('#metro').setAttribute('aria-pressed', audio.opts.metronome);
   $('#countin').setAttribute('aria-pressed', audio.opts.countIn);
+  $('#count-beats').value = audio.opts.countBeats;
+  $('#count-beats').disabled = !audio.opts.countIn;
   $('#bass').setAttribute('aria-pressed', audio.opts.bassOn);
   $('#vol-bass').value = audio.opts.bassVol;
   $('#vol-click').value = audio.opts.clickVol;
@@ -275,8 +310,19 @@ function setPlaying(on) {
   renderPads();
 }
 
+function showCountdown(n) {
+  const el = $('#countdown');
+  if (n == null) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  if (el.textContent !== String(n)) el.textContent = n;
+}
+
 async function startPlayback() {
   const ok = await audio.play(store.get(), () => {
+    showCountdown(null);
     setPlaying(false);
     grid.setPlayhead(null);
     highlightNotation(null);
@@ -297,6 +343,7 @@ function follow() {
   if (t == null) return requestAnimationFrame(follow);
   grid.setPlayhead(t);
   highlightNotation(t < 0 ? null : t);
+  showCountdown(t < 0 ? Math.ceil(-t / beatTicks(store.get())) : null);
   const sp = t < 0 ? null : spanAt(analysis.spans, t);
   if (sp && sp.index !== lastSpan) {
     lastSpan = sp.index;
@@ -315,6 +362,11 @@ Object.entries(toggles).forEach(([id, key]) =>
     if (id === 'loop') drawNotation();
   })
 );
+
+$('#count-beats').addEventListener('change', e => {
+  audio.opts.countBeats = Number(e.target.value);
+  savePrefs();
+});
 
 [['vol-bass', 'bassVol'], ['vol-click', 'clickVol']].forEach(([id, key]) => {
   $(`#${id}`).addEventListener('input', e => {
@@ -429,8 +481,7 @@ function triggerPad(i) {
   if (i === ui.activePad && ui.queuedPad == null) {
     return audio.isPlaying() ? audio.stop() : startPlayback();
   }
-  load(g, { pad: i });
-  if (!audio.isPlaying()) startPlayback();
+  load(g, { pad: i, message: audio.isPlaying() ? null : `Pad ${i + 1}: "${g.title}". Press Play or tap the pad again.` });
 }
 
 function renderPads() {
@@ -530,7 +581,7 @@ function exampleCard(ex, mine) {
     <p class="card-meta">${chords.join(' · ')} · ${g.bpm} BPM</p>
     ${!mine ? rhythmStrip(TEMPLATES.find(t => t.id === g.template)) : ''}
     <div class="row-btns">
-      <button type="button" data-${mine ? 'ex' : 'preset'}="${mine ? ex.id : ex.index}">Load and play</button>
+      <button type="button" data-${mine ? 'ex' : 'preset'}="${mine ? ex.id : ex.index}">Load</button>
       <button type="button" class="ghost" data-${mine ? 'ex' : 'preset'}-bank="${mine ? ex.id : ex.index}">Add to bank</button>
       ${mine ? (ui.confirmExample === ex.id
         ? `<span class="confirm">Delete? <button type="button" data-ex-del-yes="${ex.id}">Delete</button><button type="button" data-ex-del-no>Keep</button></span>`
@@ -621,9 +672,7 @@ function addToBank(groove) {
 }
 
 function playGroove(groove, message) {
-  ui.resumed = true;
-  load(groove, { message });
-  if (!audio.isPlaying()) startPlayback();
+  load(groove, { message: audio.isPlaying() ? null : message });
 }
 
 $('#grooves').addEventListener('click', e => {
@@ -659,7 +708,7 @@ $('#grooves').addEventListener('click', e => {
   } else if (b.id === 'genre-generate') {
     const g = generate(ui.genre, { tuning });
     if (!g) return toast(`No basslines in ${genreName(ui.genre)} yet. Save one here first.`);
-    playGroove(g, `Generated "${g.title}".`);
+    playGroove(g, `Generated "${g.title}". Press Play to hear it.`);
   } else if (b.id === 'genre-save') {
     const s = store.get();
     const ex = { id: uid(), genre: ui.genre, groove: { ...structuredClone(s), genre: ui.genre } };
@@ -803,4 +852,4 @@ renderAll();
 renderPads();
 renderGroovesPanes();
 grid.scrollToContent(store.get(), analysis);
-if (fromLink) toast(`Opened shared groove "${store.get().title}".`);
+if (startMessage) toast(startMessage);

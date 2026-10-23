@@ -9,7 +9,10 @@ Runs entirely in the browser. No build step, no server, no account.
 Works on desktop (mouse + keyboard) and phones (touch). Every action has a button; desktop also gets shortcuts.
 
 **Starting**
-- Every visit opens on a blank canvas. Resume your last session with one tap, or pick a genre and press **Generate** for a starting line (a genre rhythm over a typical progression for that style, or one of your saved basslines in that genre).
+- Opening the app picks up whatever you were working on last. With nothing in progress it loads a random groove from your bank, or a random starter if the bank is empty.
+- **Blank canvas** clears the notes and gives you one random chord to write over.
+- **Generate** loads a typical line for the chosen genre (a genre rhythm over a typical progression, or one of your saved basslines in that genre).
+- Nothing plays on its own: press Play (or Space), or tap the active pad.
 
 **Writing**
 - Grid editor: tap/click to add, tap again to delete, drag to move, drag the right-edge handle to lengthen. A note you drag or stretch overwrites the notes it lands on.
@@ -23,10 +26,10 @@ Works on desktop (mouse + keyboard) and phones (touch). Every action has a butto
 - Shows the progression in Roman numerals and flags chords that use notes outside the key.
 
 **Playing**
-- Loop, metronome, count-in, live BPM, tap tempo, bass and click volume sliders, bass mute.
+- Loop, metronome, count-in of 1–8 beats with an on-screen countdown, live BPM, tap tempo, bass and click volume sliders, bass mute.
 
 **Grooves**
-- Bank: 16 pads saved in your browser. Tap a pad to play it on loop. Tap another while it plays and it switches on the next loop. Empty pads save the current groove.
+- Bank: 16 pads saved in your browser. Tap a pad to load it, tap it again to play it on loop. Tap another while one plays and it switches on the next loop. Empty pads save the current groove.
 - Genres: six built-in (Funk, Motown/Soul, Rock, Reggae, Jazz walking, Latin) with two starters each. Create your own genres, edit or delete them, and save, update, rename or delete basslines in any genre. Generate draws from them.
 - Templates: 12 genre rhythm patterns that play over the chords you've set.
 - Share links carry the whole groove in the URL.

@@ -11,7 +11,7 @@ let onEnd = () => {};
 let queued = null; // { groove, onSwitch } waiting for the end of the loop
 let switchId = null;
 
-export const opts = { loop: true, metronome: true, countIn: false, bassOn: true, bassVol: 80, clickVol: 60 };
+export const opts = { loop: true, metronome: true, countIn: false, countBeats: 4, bassOn: true, bassVol: 80, clickVol: 60 };
 
 const transport = () => Tone.getTransport();
 const toDb = (v, base) => (v <= 0 ? -Infinity : base + 20 * Math.log10(v / 100));
@@ -155,7 +155,7 @@ export function cancelQueue() {
 export async function play(s, whenEnded) {
   if (!(await ensureAudio())) return false;
   onEnd = whenEnded ?? (() => {});
-  offset = opts.countIn ? barTicks(s) : 0;
+  offset = opts.countIn ? opts.countBeats * beatTicks(s) : 0; // count-in length in beats
   const T = transport();
   T.stop();
   T.position = 0;

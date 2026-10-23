@@ -853,3 +853,33 @@ kbd {
 .genre-form .row-btns { margin-top: 6px; }
 .rename { display: flex; gap: 6px; flex: 1; min-width: 0; }
 .rename input { flex: 1; min-width: 0; }
+
+/* ---------- Count-in ---------- */
+.countin-group { display: inline-flex; align-items: center; gap: 0; }
+.countin-group .toggle { border-radius: 8px 0 0 8px; }
+.countin-group select {
+  border-radius: 0 8px 8px 0;
+  margin-left: -1px;
+  min-height: 36px;
+  padding: 0 4px 0 8px;
+  font: 600 13px var(--font-mono);
+}
+.countin-group select:disabled { opacity: 0.45; }
+.countdown {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 96px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}

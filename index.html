@@ -35,7 +35,14 @@
       <div class="toggles" role="group" aria-label="Playback options">
         <button id="loop" type="button" class="toggle" aria-pressed="true">Loop</button>
         <button id="metro" type="button" class="toggle" aria-pressed="true">Click</button>
-        <button id="countin" type="button" class="toggle" aria-pressed="false">Count-in</button>
+        <span class="countin-group">
+          <button id="countin" type="button" class="toggle" aria-pressed="false">Count-in</button>
+          <label class="sr" for="count-beats">Count-in beats</label>
+          <select id="count-beats" title="Beats counted before playback">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+            <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+          </select>
+        </span>
         <button id="bass" type="button" class="toggle" aria-pressed="true">Bass</button>
       </div>
       <div class="mix" role="group" aria-label="Volume">
@@ -60,8 +67,7 @@
       <label class="sr" for="gen-genre">Genre</label>
       <select id="gen-genre" title="Genre for this groove and for Generate"></select>
       <button id="generate" type="button" title="Load a typical line for this genre">Generate</button>
-      <button id="blank" type="button" class="ghost" title="Clear to an empty canvas">Blank canvas</button>
-      <button id="resume" type="button" class="ghost" hidden></button>
+      <button id="blank" type="button" class="ghost" title="Start empty over one random chord">Blank canvas</button>
     </div>
   </section>
 
@@ -107,7 +113,7 @@
     <div id="genre-chips" class="chips" role="group" aria-label="Genre"></div>
 
     <div id="pane-bank">
-      <p class="sub">Tap a pad to play it on loop. Tap another while it plays and it switches when the loop comes round. Empty pads save the groove in the editor.</p>
+      <p class="sub">Tap a pad to load it, tap it again to play. Tap another while one plays and it switches when the loop comes round. Empty pads save the groove in the editor.</p>
       <div id="pads" class="pads"></div>
       <div id="pad-actions" class="pad-actions"></div>
     </div>
@@ -134,6 +140,7 @@
   </div>
 </div>
 
+<div id="countdown" class="countdown" aria-live="assertive" hidden></div>
 <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
